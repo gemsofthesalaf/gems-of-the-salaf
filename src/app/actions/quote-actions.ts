@@ -25,7 +25,7 @@ export async function createQuoteAction(payload: any) {
   await verifyAuth()
   const supabase = getAdminClient()
   
-  const { data, error } = await supabase.from('quotes').insert(payload).select().single()
+  const { data, error } = await (supabase.from('quotes') as any).insert(payload).select().single()
   if (error) throw new Error(error.message)
   return data
 }
@@ -34,7 +34,7 @@ export async function updateQuoteAction(id: string, payload: any) {
   await verifyAuth()
   const supabase = getAdminClient()
   
-  const { data, error } = await supabase.from('quotes').update(payload).eq('id', id).select().single()
+  const { data, error } = await (supabase.from('quotes') as any).update(payload).eq('id', id).select().single()
   if (error) throw new Error(error.message)
   return data
 }
@@ -43,7 +43,7 @@ export async function deleteQuoteAction(id: string) {
   await verifyAuth()
   const supabase = getAdminClient()
   
-  const { error } = await supabase.from('quotes').delete().eq('id', id)
+  const { error } = await (supabase.from('quotes') as any).delete().eq('id', id)
   if (error) throw new Error(error.message)
   return { success: true }
 }
@@ -51,7 +51,7 @@ export async function deleteQuoteAction(id: string) {
 export async function getQuoteAction(id: string) {
   await verifyAuth()
   const supabase = getAdminClient()
-  const { data, error } = await supabase.from('quotes').select('*').eq('id', id).single()
+  const { data, error } = await (supabase.from('quotes') as any).select('*').eq('id', id).single()
   if (error) throw new Error(error.message)
   return data
 }

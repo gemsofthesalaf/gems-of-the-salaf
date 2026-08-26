@@ -23,7 +23,7 @@ export async function createImportAction(payload: any) {
   await verifyAuth()
   const supabase = getAdminClient()
   
-  const { data, error } = await supabase.from('imports').insert(payload).select().single()
+  const { data, error } = await (supabase.from('imports') as any).insert(payload).select().single()
   if (error) throw new Error(error.message)
   return data
 }
@@ -33,7 +33,7 @@ export async function approveImportAction(importId: string, quotePayload: any) {
   const supabase = getAdminClient()
   
   // Create quote
-  const { data: quote, error: insertError } = await supabase.from('quotes').insert(quotePayload).select().single()
+  const { data: quote, error: insertError } = await (supabase.from('quotes') as any).insert(quotePayload).select().single()
   if (insertError) throw new Error(insertError.message)
     
   // Update import status
@@ -42,7 +42,7 @@ export async function approveImportAction(importId: string, quotePayload: any) {
     processed_at: new Date().toISOString()
   }
   
-  const { error: updateError } = await supabase.from('imports').update(updatePayload).eq('id', importId)
+  const { error: updateError } = await (supabase.from('imports') as any).update(updatePayload).eq('id', importId)
   if (updateError) throw new Error(updateError.message)
   
   return quote
@@ -57,7 +57,7 @@ export async function rejectImportAction(importId: string) {
     processed_at: new Date().toISOString()
   }
   
-  const { error } = await supabase.from('imports').update(updatePayload).eq('id', importId)
+  const { error } = await (supabase.from('imports') as any).update(updatePayload).eq('id', importId)
   if (error) throw new Error(error.message)
   return { success: true }
 }

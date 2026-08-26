@@ -13,9 +13,9 @@ export default async function TaxonomyAdminPage() {
     { data: sources },
     { data: categories }
   ] = await Promise.all([
-    supabase.from('scholars').select('*').order('english_name'),
-    supabase.from('sources').select('*').order('title'),
-    supabase.from('categories').select('*').order('name')
+    (supabase.from('scholars') as any).select('*').order('english_name'),
+    (supabase.from('sources') as any).select('*').order('title'),
+    (supabase.from('categories') as any).select('*').order('name')
   ])
 
   return (
@@ -35,7 +35,7 @@ export default async function TaxonomyAdminPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {scholars?.map((s) => (
+            {scholars?.map((s: any) => (
               <div key={s.id} className="p-3 border rounded-md text-sm">
                 <p className="font-semibold">{s.english_name}</p>
                 <p className="text-muted-foreground text-xs">{s.slug}</p>
@@ -54,7 +54,7 @@ export default async function TaxonomyAdminPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {sources?.map((s) => (
+            {sources?.map((s: any) => (
               <div key={s.id} className="p-3 border rounded-md text-sm">
                 <p className="font-semibold">{s.title}</p>
                 <p className="text-muted-foreground text-xs">{s.slug}</p>
@@ -73,7 +73,7 @@ export default async function TaxonomyAdminPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {categories?.map((c) => (
+            {categories?.map((c: any) => (
               <div key={c.id} className="p-3 border rounded-md text-sm">
                 <p className="font-semibold">{c.name}</p>
                 <p className="text-muted-foreground text-xs">{c.slug}</p>
