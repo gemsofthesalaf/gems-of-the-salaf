@@ -7,7 +7,7 @@ import { ArrowLeft, Save, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { createClient } from '@/lib/supabase/client'
+import { updateQuoteAction, getQuoteAction } from '@/app/actions/quote-actions'
 import { Database } from '@/lib/supabase/types'
 import { use } from 'react'
 
@@ -17,7 +17,6 @@ type QuoteUpdate = Database['public']['Tables']['quotes']['Update']
 export default function EditQuotePage({ params }: { params: Promise<{ id: string }> }) {
   const unwrappedParams = use(params)
   const router = useRouter()
-  const supabase = createClient()
   
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(true)
@@ -37,33 +36,30 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
 
   useEffect(() => {
     async function loadQuote() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.from('quotes') as any)
-        .select('*')
-        .eq('id', unwrappedParams.id)
-        .single()
-
-      if (error) {
+      try {
+        const data = await getQuoteAction(unwrappedParams.id)
+        if (data) {
+          const d = data as QuoteRow
+          setFormData({
+            arabic_text: d.arabic_text || '',
+            english_text: d.english_text || '',
+            scholar_id: d.scholar_id || '',
+            source_id: d.source_id || '',
+            book: d.book || '',
+            volume: d.volume || '',
+            page: d.page || '',
+            chapter: d.chapter || '',
+            status: d.status || 'draft',
+            slug: d.slug || ''
+          })
+        }
+      } catch (error: any) {
         setErrorMsg('Could not load quote: ' + error.message)
-      } else if (data) {
-        const d = data as QuoteRow
-        setFormData({
-          arabic_text: d.arabic_text || '',
-          english_text: d.english_text || '',
-          scholar_id: d.scholar_id || '',
-          source_id: d.source_id || '',
-          book: d.book || '',
-          volume: d.volume || '',
-          page: d.page || '',
-          chapter: d.chapter || '',
-          status: d.status || 'draft',
-          slug: d.slug || ''
-        })
       }
       setFetching(false)
     }
     loadQuote()
-  }, [unwrappedParams.id, supabase])
+  }, [unwrappedParams.id])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,15 +84,13 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
       published_at: formData.status === 'published' ? new Date().toISOString() : undefined
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from('quotes') as any).update(payload).eq('id', unwrappedParams.id)
-
-    if (error) {
-      setErrorMsg(error.message)
-      setLoading(false)
-    } else {
+    try {
+      await updateQuoteAction(unwrappedParams.id, payload)
       router.push('/admin/quotes')
       router.refresh()
+    } catch (error: any) {
+      setErrorMsg(error.message)
+      setLoading(false)
     }
   }
 

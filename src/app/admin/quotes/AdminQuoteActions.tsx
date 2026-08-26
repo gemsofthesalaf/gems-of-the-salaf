@@ -3,27 +3,24 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { deleteQuoteAction } from '@/app/actions/quote-actions'
 import { Button } from '@/components/ui/button'
 import { Edit, Trash2, Loader2 } from 'lucide-react'
 
 export function AdminQuoteActions({ quoteId }: { quoteId: string }) {
   const [isDeleting, setIsDeleting] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
 
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this quote?')) return
     
     setIsDeleting(true)
-    const { error } = await supabase.from('quotes').delete().eq('id', quoteId)
-    
-    if (error) {
+    try {
+      await deleteQuoteAction(quoteId)
+      router.refresh()
+    } catch (error: any) {
       alert('Error deleting quote: ' + error.message)
       setIsDeleting(false)
-    } else {
-      router.refresh()
-      // Note: we don't reset isDeleting to false if successful, because the row will unmount on refresh
     }
   }
 

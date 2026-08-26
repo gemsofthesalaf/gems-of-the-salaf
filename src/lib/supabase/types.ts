@@ -68,6 +68,29 @@ export type Database = {
         Insert: Partial<Database['public']['Tables']['categories']['Row']>
         Update: Partial<Database['public']['Tables']['categories']['Row']>
       }
+      admins: {
+        Row: {
+          id: string
+          email: string
+          role: string
+          password_hash: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id: string
+          email: string
+          role?: string
+          password_hash?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          email?: string
+          role?: string
+          password_hash?: string | null
+          created_at?: string | null
+        }
+      }
       tags: {
         Row: {
           id: string

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { parseTelegramPost } from '@/lib/telegram-parser'
-import { createClient } from '@/lib/supabase/client'
+import { createImportAction } from '@/app/actions/import-actions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,7 +15,6 @@ export function ManualImporter() {
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const supabase = createClient()
   const router = useRouter()
 
   const handleParse = async () => {
@@ -35,10 +34,7 @@ export function ManualImporter() {
         status: 'pending'
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from('imports') as any).insert(payload)
-
-      if (error) throw error
+      await createImportAction(payload)
 
       setText('')
       router.refresh()

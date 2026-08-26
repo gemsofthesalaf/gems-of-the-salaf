@@ -8,14 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
-import { createClient } from '@/lib/supabase/client'
+import { createQuoteAction } from '@/app/actions/quote-actions'
 import { Database } from '@/lib/supabase/types'
 
 type QuoteInsert = Database['public']['Tables']['quotes']['Insert']
 
 export default function NewQuotePage() {
   const router = useRouter()
-  const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [formData, setFormData] = useState({
@@ -52,16 +51,14 @@ export default function NewQuotePage() {
       published_at: formData.status === 'published' ? new Date().toISOString() : undefined
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from('quotes') as any).insert(payload)
-
-    if (error) {
+    try {
+      await createQuoteAction(payload)
+      router.push('/admin/quotes')
+      router.refresh()
+    } catch (error: any) {
       console.error(error)
       setErrorMsg(error.message)
       setLoading(false)
-    } else {
-      router.push('/admin/quotes')
-      router.refresh()
     }
   }
 

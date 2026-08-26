@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { approveImportAction, rejectImportAction } from '@/app/actions/import-actions'
 import { Button } from '@/components/ui/button'
 import { XCircle, Loader2 } from 'lucide-react'
 
@@ -13,7 +13,6 @@ type ImportQueueItem = Database['public']['Tables']['imports']['Row']
 export function ImportItemActions({ item }: { item: ImportQueueItem }) {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
 
   const handleApprove = async () => {
     setLoading(true)
@@ -32,29 +31,26 @@ export function ImportItemActions({ item }: { item: ImportQueueItem }) {
       status: 'draft', 
     }
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: insertError } = await (supabase.from('quotes') as any).insert(quotePayload)
-
-    if (insertError) {
-      alert('Error approving: ' + insertError.message)
+    try {
+      await approveImportAction(item.id, quotePayload)
+      router.refresh()
+    } catch (error: any) {
+      alert('Error approving: ' + error.message)
       setLoading(false)
-      return
     }
-
-    const updatePayload: Database['public']['Tables']['imports']['Update'] = { status: 'approved' }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from('imports') as any).update(updatePayload).eq('id', item.id)
-    
-    router.refresh()
   }
 
   const handleReject = async () => {
     if (!window.confirm('Are you sure you want to discard this import?')) return
     setLoading(true)
-    const updatePayload: Database['public']['Tables']['imports']['Update'] = { status: 'rejected' }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from('imports') as any).update(updatePayload).eq('id', item.id)
-    router.refresh()
+    
+    try {
+      await rejectImportAction(item.id)
+      router.refresh()
+    } catch (error: any) {
+      alert('Error rejecting: ' + error.message)
+      setLoading(false)
+    }
   }
 
   return (
