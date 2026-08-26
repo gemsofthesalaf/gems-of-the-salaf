@@ -35,7 +35,7 @@ export default function NewQuotePage() {
     setErrorMsg('')
     
     // Auto-generate slug if empty
-    let finalSlug = formData.english_text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now()
+    const finalSlug = formData.english_text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now()
 
     const payload: QuoteInsert = {
       arabic_text: formData.arabic_text || undefined,

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileText, Users, Download, Book } from "lucide-react"
+import { FileText, Users, Book } from "lucide-react"
 
 export default async function AdminDashboard() {
   const supabase = await createClient()
@@ -9,13 +9,11 @@ export default async function AdminDashboard() {
   const [
     { count: quotesCount },
     { count: draftCount },
-    { count: scholarCount },
-    { count: importCount }
+    { count: scholarCount }
   ] = await Promise.all([
     supabase.from('quotes').select('*', { count: 'exact', head: true }),
     supabase.from('quotes').select('*', { count: 'exact', head: true }).eq('status', 'draft'),
-    supabase.from('scholars').select('*', { count: 'exact', head: true }),
-    supabase.from('imports').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase.from('scholars').select('*', { count: 'exact', head: true })
   ])
 
   return (
@@ -25,7 +23,7 @@ export default async function AdminDashboard() {
         <p className="text-muted-foreground">Welcome to the Gems of the Salaf management system.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Quotes</CardTitle>
@@ -56,17 +54,6 @@ export default async function AdminDashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{scholarCount || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">In the taxonomy</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Imports</CardTitle>
-            <Download className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{importCount || 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">From Telegram queue</p>
           </CardContent>
         </Card>
       </div>

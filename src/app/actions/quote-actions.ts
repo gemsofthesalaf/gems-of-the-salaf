@@ -1,5 +1,6 @@
 'use server'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { createClient } from "@supabase/supabase-js"
@@ -16,7 +17,8 @@ const getAdminClient = () => {
 // Helper to verify auth
 const verifyAuth = async () => {
   const session = await getServerSession(authOptions)
-  if (!session || (session.user as any)?.role !== 'admin') {
+  const role = session?.user && 'role' in session.user ? (session.user as {role: string}).role : null
+  if (!session || role !== 'admin') {
     throw new Error("Unauthorized")
   }
 }

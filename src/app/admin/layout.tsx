@@ -15,7 +15,7 @@ export default function AdminLayout({
         </div>
         <nav className="flex items-center gap-4 text-sm font-medium">
           <Link href="/admin/quotes" className="hover:text-primary transition-colors">Quotes</Link>
-          <Link href="/admin/import" className="hover:text-primary transition-colors">Import Tool</Link>
+
           <Link href="/admin/scholars" className="hover:text-primary transition-colors">Taxonomy</Link>
           <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors ml-4 border-l pl-4">
             Exit to Site

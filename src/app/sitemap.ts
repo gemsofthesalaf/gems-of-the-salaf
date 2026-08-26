@@ -7,7 +7,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://gemsofthesalaf.com'
 
   // Fetch all dynamic routes (published quotes, scholars, sources, categories, etc.)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [{ data: quotes }, { data: scholars }, { data: categories }, { data: sources }] = await Promise.all([
     (supabase.from('quotes') as any).select('slug, updated_at').eq('status', 'published'),
     (supabase.from('scholars') as any).select('slug, updated_at'),
