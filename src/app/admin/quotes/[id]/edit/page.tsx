@@ -53,8 +53,12 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
             slug: d.slug || ''
           })
         }
-      } catch (error: any) {
-        setErrorMsg('Could not load quote: ' + error.message)
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          setErrorMsg('Could not load quote: ' + error.message)
+        } else {
+          setErrorMsg('Could not load quote: Unknown error')
+        }
       }
       setFetching(false)
     }
@@ -88,8 +92,12 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
       await updateQuoteAction(unwrappedParams.id, payload)
       router.push('/admin/quotes')
       router.refresh()
-    } catch (error: any) {
-      setErrorMsg(error.message)
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        setErrorMsg(error.message)
+      } else {
+        setErrorMsg('An unknown error occurred')
+      }
       setLoading(false)
     }
   }

@@ -9,36 +9,38 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch all dynamic routes (published quotes, scholars, sources, categories, etc.)
    
   const [{ data: quotes }, { data: scholars }, { data: categories }, { data: sources }] = await Promise.all([
-    (supabase.from('quotes') as any).select('slug, updated_at').eq('status', 'published'),
-    (supabase.from('scholars') as any).select('slug, updated_at'),
-    (supabase.from('categories') as any).select('slug, updated_at'),
-    (supabase.from('sources') as any).select('slug, updated_at')
+    supabase.from('quotes').select('slug, updated_at').eq('status', 'published'),
+    supabase.from('scholars').select('slug, updated_at'),
+    supabase.from('categories').select('slug, updated_at'),
+    supabase.from('sources').select('slug, updated_at')
   ])
 
-  const quoteEntries: MetadataRoute.Sitemap = (quotes || []).map((quote: any) => ({
+  type RecordWithSlug = { slug: string; updated_at: string | null }
+
+  const quoteEntries: MetadataRoute.Sitemap = ((quotes as unknown as RecordWithSlug[]) || []).map((quote) => ({
     url: `${baseUrl}/quotes/${quote.slug}`,
-    lastModified: new Date(quote.updated_at),
+    lastModified: quote.updated_at ? new Date(quote.updated_at) : new Date(),
     changeFrequency: 'monthly',
     priority: 0.8,
   }))
 
-  const scholarEntries: MetadataRoute.Sitemap = (scholars || []).map((scholar: any) => ({
+  const scholarEntries: MetadataRoute.Sitemap = ((scholars as unknown as RecordWithSlug[]) || []).map((scholar) => ({
     url: `${baseUrl}/scholars/${scholar.slug}`,
-    lastModified: new Date(scholar.updated_at),
+    lastModified: scholar.updated_at ? new Date(scholar.updated_at) : new Date(),
     changeFrequency: 'monthly',
     priority: 0.7,
   }))
 
-  const categoryEntries: MetadataRoute.Sitemap = (categories || []).map((category: any) => ({
+  const categoryEntries: MetadataRoute.Sitemap = ((categories as unknown as RecordWithSlug[]) || []).map((category) => ({
     url: `${baseUrl}/categories/${category.slug}`,
-    lastModified: new Date(category.updated_at),
+    lastModified: category.updated_at ? new Date(category.updated_at) : new Date(),
     changeFrequency: 'weekly',
     priority: 0.6,
   }))
 
-  const sourceEntries: MetadataRoute.Sitemap = (sources || []).map((source: any) => ({
+  const sourceEntries: MetadataRoute.Sitemap = ((sources as unknown as RecordWithSlug[]) || []).map((source) => ({
     url: `${baseUrl}/sources/${source.slug}`,
-    lastModified: new Date(source.updated_at),
+    lastModified: source.updated_at ? new Date(source.updated_at) : new Date(),
     changeFrequency: 'weekly',
     priority: 0.6,
   }))

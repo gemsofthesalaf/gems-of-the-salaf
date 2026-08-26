@@ -18,8 +18,12 @@ export function AdminQuoteActions({ quoteId }: { quoteId: string }) {
     try {
       await deleteQuoteAction(quoteId)
       router.refresh()
-    } catch (error: any) {
-      alert('Error deleting quote: ' + error.message)
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        alert('Error deleting quote: ' + error.message)
+      } else {
+        alert('An unknown error occurred')
+      }
       setIsDeleting(false)
     }
   }

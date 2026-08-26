@@ -97,7 +97,7 @@ export default async function QuotesPage(props: {
 }
 
 async function QuotesFeed({ 
-  query, scholarSlug, categorySlug, limit, offset 
+  query, scholarSlug, limit, offset 
 }: { 
   query: string, scholarSlug: string, categorySlug: string, limit: number, offset: number 
 }) {
@@ -118,7 +118,7 @@ async function QuotesFeed({
     queryBuilder = queryBuilder.eq('scholars.slug', scholarSlug)
   }
   
-  const { data, count, error } = await queryBuilder
+  const { data, error } = await queryBuilder
     .order('published_at', { ascending: false })
     .range(offset, offset + limit - 1)
 

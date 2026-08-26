@@ -55,9 +55,13 @@ export default function NewQuotePage() {
       await createQuoteAction(payload)
       router.push('/admin/quotes')
       router.refresh()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error)
-      setErrorMsg(error.message)
+      if (error instanceof Error) {
+        setErrorMsg(error.message)
+      } else {
+        setErrorMsg('An unknown error occurred')
+      }
       setLoading(false)
     }
   }
