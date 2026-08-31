@@ -1,79 +1,85 @@
-import { NextAuthOptions } from "next-auth"
-import CredentialsProvider from "next-auth/providers/credentials"
-import { createClient } from "@supabase/supabase-js"
-import bcrypt from "bcrypt"
+import 'server-only'
+
+import type { NextAuthOptions } from 'next-auth'
+import CredentialsProvider from 'next-auth/providers/credentials'
+import bcrypt from 'bcrypt'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+const DUMMY_PASSWORD_HASH = '$2b$12$84cShtbxGbEC81wG5TRl0eNGROGgO.lM927PfK0fbpjJmDgQrLf5q'
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     CredentialsProvider({
-      name: "Admin Login",
+      name: 'Admin credentials',
       credentials: {
-        email: { label: "Email", type: "email", placeholder: "admin@example.com" },
-        password: { label: "Password", type: "password" }
+        email: { label: 'Email', type: 'email', autocomplete: 'username' },
+        password: { label: 'Password', type: 'password', autocomplete: 'current-password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Missing email or password")
-        }
+        const email = credentials?.email?.trim().toLowerCase()
+        const password = credentials?.password
+        if (!email || !password || email.length > 320 || password.length > 1_000) return null
 
-        // Use service role key to bypass RLS and read the admin table
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
-        )
+        const supabase = createAdminClient()
+        const { data: admin } = await supabase
+          .from('admins')
+          .select('id,email,role,password_hash')
+          .ilike('email', email)
+          .maybeSingle()
 
-        const { data: admin, error } = await supabase
-          .from("admins")
-          .select("*")
-          .eq("email", credentials.email)
-          .single()
+        const hash = admin?.password_hash ?? DUMMY_PASSWORD_HASH
+        const validPassword = await bcrypt.compare(password, hash)
+        if (!admin || admin.role !== 'admin' || !admin.password_hash || !validPassword) return null
 
-        if (error || !admin) {
-          throw new Error("Invalid credentials")
-        }
-
-        if (!admin.password_hash) {
-          throw new Error("Account is not configured with a password")
-        }
-
-        const isPasswordValid = await bcrypt.compare(credentials.password, admin.password_hash)
-
-        if (!isPasswordValid) {
-          throw new Error("Invalid credentials")
-        }
-
-        return {
-          id: admin.id,
-          email: admin.email,
-          role: admin.role,
-        }
-      }
-    })
+        return { id: admin.id, email: admin.email, role: 'admin' }
+      },
+    }),
   ],
   session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    strategy: 'jwt',
+    maxAge: 8 * 60 * 60,
+  },
+  jwt: {
+    maxAge: 8 * 60 * 60,
   },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id
-        token.role = (user as { role?: string }).role
+        token.role = user.role
       }
       return token
     },
     async session({ session, token }) {
-      if (token) {
-        session.user = {
-          ...session.user,
-          id: token.id as string,
-          role: token.role as string,
-        } as { id: string; role: string; name?: string | null; email?: string | null; image?: string | null }
-      }
+      session.user.id = token.id ?? ''
+      session.user.role = token.role === 'admin' ? 'admin' : null
       return session
-    }
+    },
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith('/')) return `${baseUrl}${url}`
+      try {
+        const candidate = new URL(url)
+        if (candidate.origin === baseUrl) return url
+      } catch {
+        // Ignore malformed redirect targets.
+      }
+      return `${baseUrl}/admin`
+    },
   },
   pages: {
-    signIn: "/admin/login",
+    signIn: '/admin/login',
+    error: '/admin/login',
+  },
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' ? '__Secure-gems.session-token' : 'gems.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
   },
 }

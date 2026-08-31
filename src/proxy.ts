@@ -7,7 +7,7 @@ export async function proxy(request: NextRequest) {
 
   // Protect admin routes
   if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) {
-    const token = await getToken({ req: request })
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     
     if (!token || token.role !== 'admin') {
       const url = request.nextUrl.clone()
@@ -18,7 +18,7 @@ export async function proxy(request: NextRequest) {
 
   // Redirect authenticated users away from the login page
   if (pathname === '/admin/login') {
-    const token = await getToken({ req: request })
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
     if (token && token.role === 'admin') {
       const url = request.nextUrl.clone()
       url.pathname = '/admin'

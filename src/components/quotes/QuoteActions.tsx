@@ -1,41 +1,91 @@
 'use client'
 
 import { useState } from 'react'
+import { Check, Copy, Languages, Link as LinkIcon, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Link as LinkIcon, Share2, Check } from 'lucide-react'
 
-export function QuoteActions({ quoteSlug, englishText }: { quoteSlug: string, englishText: string }) {
-  const [copiedLink, setCopiedLink] = useState(false)
-
-
-  const handleCopyLink = () => {
-    const url = `${window.location.origin}/quotes/${quoteSlug}`
-    navigator.clipboard.writeText(url)
-    setCopiedLink(true)
-    setTimeout(() => setCopiedLink(false), 2000)
+async function writeClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
   }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('Copy failed')
+}
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: 'Quote from Gems of the Salaf',
-        text: englishText.substring(0, 50) + '...',
-        url: `${window.location.origin}/quotes/${quoteSlug}`
-      }).catch(console.error)
-    } else {
-      handleCopyLink()
+type CopyKind = 'arabic' | 'english' | 'both' | 'link' | null
+
+export function QuoteActions({
+  arabicText,
+  englishText,
+  canonicalUrl,
+}: {
+  arabicText: string | null
+  englishText: string
+  canonicalUrl: string
+}) {
+  const [copied, setCopied] = useState<CopyKind>(null)
+  const [message, setMessage] = useState('')
+
+  async function copy(kind: Exclude<CopyKind, null>, value: string) {
+    try {
+      await writeClipboard(value)
+      setCopied(kind)
+      setMessage(`${kind === 'both' ? 'Arabic and English' : kind[0].toUpperCase() + kind.slice(1)} copied`)
+      window.setTimeout(() => setCopied(null), 1800)
+    } catch {
+      setMessage('Copy failed. Select the text and copy it manually.')
     }
   }
 
+  async function share() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Gems of the Salaf', text: englishText, url: canonicalUrl })
+        setMessage('Share sheet opened')
+      } else {
+        await copy('link', canonicalUrl)
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setMessage('Sharing is unavailable on this device.')
+    }
+  }
+
+  const both = arabicText ? `${arabicText}\n\n${englishText}` : englishText
+
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
-      <Button variant="outline" className="gap-2" onClick={handleCopyLink}>
-        {copiedLink ? <Check className="h-4 w-4 text-green-500" /> : <LinkIcon className="h-4 w-4" />}
-        {copiedLink ? 'Link Copied!' : 'Copy Link'}
+    <div className="quote-actions" aria-label="Quote actions">
+      {arabicText ? (
+        <Button type="button" variant="outline" onClick={() => copy('arabic', arabicText)}>
+          {copied === 'arabic' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+          Copy Arabic
+        </Button>
+      ) : null}
+      <Button type="button" variant="outline" onClick={() => copy('english', englishText)}>
+        {copied === 'english' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+        Copy English
       </Button>
-      <Button variant="outline" className="gap-2" onClick={handleShare}>
-        <Share2 className="h-4 w-4" /> Share
+      <Button type="button" variant="outline" onClick={() => copy('both', both)}>
+        {copied === 'both' ? <Check aria-hidden="true" /> : <Languages aria-hidden="true" />}
+        Copy both
       </Button>
+      <Button type="button" variant="outline" onClick={() => copy('link', canonicalUrl)}>
+        {copied === 'link' ? <Check aria-hidden="true" /> : <LinkIcon aria-hidden="true" />}
+        Copy link
+      </Button>
+      <Button type="button" onClick={share}>
+        <Share2 aria-hidden="true" /> Share
+      </Button>
+      <p className="sr-only" aria-live="polite">{message}</p>
     </div>
   )
 }

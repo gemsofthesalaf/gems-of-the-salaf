@@ -1,69 +1,75 @@
-# Gems of the Salaf (جواهر السلف)
+# Gems of the Salaf · جواهر السلف
 
-A scholarly digital library of sayings from the Salaf, featuring Arabic originals and English translations.
+Production-oriented, searchable archive of attributed sayings with Arabic originals, English translations, source metadata, scholars, categories, tags, and translators. Religious content is never seeded or synthesized by this repository.
 
-## Architecture
+## Stack
 
-This project is built as a production-ready, full-stack application using the Vercel + Supabase stack.
+- Next.js 16 App Router, React 19, strict TypeScript, Server Components by default
+- Tailwind CSS 4 with a small shared editorial design system
+- PostgreSQL on Supabase with normalized relations, constraints, RLS, indexes, and database-backed search/pagination
+- NextAuth v4 Credentials provider with JWT sessions
+- Zod validation and server actions for the CMS
+- Vitest and Testing Library regression tests
 
-### Technologies:
-- **Next.js 16 (App Router)**: Handles routing, server-side rendering, and static generation.
-- **Supabase**: 
-  - **PostgreSQL Database**: Stores all content.
-  - **Auth**: Manages administrative sessions.
-  - **Row-Level Security (RLS)**: Enforces access control at the database layer.
-- **Tailwind CSS**: Styling and responsive design.
+## Configuration
 
-### Security Model:
-- **Middleware**: `src/lib/supabase/middleware.ts` intercepts all requests to `/admin`. It verifies the user's JWT and queries the database via an RPC function (`is_admin()`) to ensure only authorized admins can access the CMS.
-- **RLS Policies**: The `public.quotes` and `public.imports` tables are strictly protected by Postgres Row-Level Security. Public users can only execute `SELECT` queries on quotes where `status = 'published'`. All mutations require a valid JWT belonging to a user ID listed in the `public.admins` table.
+Copy `.env.example` to `.env.local` and provide:
 
-## Deployment & Configuration
-
-### Prerequisites
-1. Node.js 18+
-2. A Supabase Project
-3. A Vercel Account
-
-### Environment Variables
-Create a `.env.local` file in the root directory:
-
-```bash
-# The URL of your Supabase project
-NEXT_PUBLIC_SUPABASE_URL=https://[YOUR-PROJECT-ID].supabase.co
-
-# The public anon key for Supabase (safe for client use)
-NEXT_PUBLIC_SUPABASE_ANON_KEY=[YOUR-ANON-KEY]
-
-# Site URL for SEO and canonical links (e.g., https://gemsofthesalaf.com)
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=PUBLIC_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=SERVER_ONLY_SERVICE_ROLE_KEY
+NEXTAUTH_SECRET=LONG_RANDOM_SECRET
+NEXTAUTH_URL=http://localhost:3000
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
-*(Note: Never expose the `SUPABASE_SERVICE_ROLE_KEY` in public variables. The current application design relies on RLS and standard Anon keys paired with authenticated JWTs to securely execute backend mutations.)*
 
-### Database Migrations
-1. Navigate to the Supabase SQL Editor.
-2. Execute the schema script located in `supabase/migrations/001_initial_schema.sql`.
-3. To authorize an admin, first create a user via Supabase Auth, then manually copy their UUID into the `public.admins` table.
+For production, set both URL variables to `https://gemsofthesalaf.com`. The service-role key and NextAuth secret are server-only secrets and must be configured in the deployment secret store. Never prefix them with `NEXT_PUBLIC_` or commit `.env.local`.
 
-### Local Development
-```bash
-npm install
-npm run dev
+## Database setup
+
+Apply the SQL files in order:
+
+1. `supabase/migrations/001_initial_schema.sql`
+2. `supabase/migrations/002_nextauth_migration.sql`
+3. `supabase/migrations/003_final_production.sql`
+
+The final migration adds normalized Arabic search, trigram indexes, stable database pagination, audit records, transactional quote saves/deletes, and safe tag merging. `supabase/seed.sql` is intentionally empty.
+
+Create an initial administrator by generating a bcrypt hash (cost 12 or greater) and inserting the email and hash directly through the secured Supabase SQL editor:
+
+```sql
+INSERT INTO public.admins (email, password_hash, role)
+VALUES ('admin@example.com', '$2b$12$REPLACE_WITH_A_REAL_BCRYPT_HASH', 'admin');
 ```
 
-### Production Build
+Rotate that bootstrap password after first login. Do not expose an administrator-creation endpoint publicly.
+
+## Authentication and authorization
+
+NextAuth verifies credentials against `public.admins` using a server-only Supabase service-role client and bcrypt. Sessions use signed, HTTP-only, same-site JWT cookies with an eight-hour maximum age. The proxy provides an early redirect for unauthenticated admin requests.
+
+The proxy is not the security boundary. Every protected page and every mutation calls `requireAdmin()`, validates the signed NextAuth session, then re-checks the administrator row in PostgreSQL before accessing the service-role client. Draft and archived quotations are excluded from public RLS policies and public data access.
+
+## Commands
+
 ```bash
+npm run dev
+npm run typecheck
+npm run lint
+npm test
 npm run build
 npm start
 ```
 
-## Telegram Import System
-The Telegram Import system is designed for safety and scalability:
-1. **Pending Queue**: Imported strings are parsed and stored in the `public.imports` table under a `pending` status.
-2. **Human Review**: An admin must manually review and approve the parse results via the `/admin/import` CMS interface.
-3. **Idempotency**: Rejected or duplicate records are simply marked `rejected` or deleted from the queue without touching the production `quotes` table.
+## Public routes
 
-## SEO & Rendering
-- **Public Routes** (`/quotes`, `/scholars`, etc.) are heavily optimized using Next.js Server Components.
-- Data fetching occurs server-side to guarantee indexing by web crawlers.
-- `robots.txt` and `sitemap.xml` are dynamically generated to shield admin routes and expose published content.
+`/`, `/quotes`, `/quotes/[slug]`, `/scholars`, `/scholars/[slug]`, `/categories`, `/categories/[slug]`, `/sources`, `/sources/[slug]`, `/translators`, `/translators/[slug]`, `/about`, `/sitemap.xml`, and `/robots.txt`.
+
+## Administrative routes
+
+`/admin/login`, `/admin`, `/admin/quotes`, `/admin/quotes/new`, `/admin/quotes/[id]/edit`, `/admin/scholars`, `/admin/sources`, `/admin/categories`, `/admin/translators`, and `/admin/tags`.
+
+## Deployment
+
+Deploy the Next.js application to Vercel (or another compatible Node host), configure the production environment variables, apply all migrations to the production Supabase project, and verify the custom domain. Run the complete build and authenticated browser acceptance journey against a staging environment before promoting it.

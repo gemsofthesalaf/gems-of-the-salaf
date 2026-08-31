@@ -1,92 +1,111 @@
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Search, ArrowRight, Library, BookOpen } from "lucide-react"
+import Link from 'next/link'
+import { ArrowRight, BookOpen, Library, Search, Send, Users } from 'lucide-react'
+import { QuoteCard } from '@/components/quotes/QuoteCard'
+import { DataUnavailable, EmptyState } from '@/components/common/DataState'
+import { getHomeData } from '@/data/public'
+import { TELEGRAM_URL } from '@/lib/site'
 
-export default function Home() {
+export const dynamic = 'force-dynamic'
+
+export default async function HomePage() {
+  const result = await getHomeData()
+
   return (
-    <div className="flex flex-col">
-      {/* Hero Section */}
-      <section className="relative flex flex-col items-center justify-center overflow-hidden border-b bg-muted/30 py-24 px-4 text-center">
-        <div className="container relative z-10 mx-auto flex max-w-4xl flex-col items-center gap-6">
-          <div className="inline-flex items-center rounded-full border bg-background px-3 py-1 text-sm shadow-sm">
-            <span className="flex h-2 w-2 rounded-full bg-primary mr-2"></span>
-            A scholarly digital library
-          </div>
-          <h1 className="font-arabic text-6xl md:text-7xl lg:text-8xl font-bold leading-tight tracking-tight mt-4">
-            جواهر السلف
-          </h1>
-          <h2 className="font-serif text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight">
-            Gems of the Salaf
-          </h2>
-          <p className="max-w-2xl text-lg text-muted-foreground leading-relaxed mt-4">
-            An archive of beneficial sayings from the early generations of Islam, featuring Arabic originals, English translations, and complete scholarly citations.
-          </p>
-          
-          <div className="mt-8 flex w-full max-w-lg flex-col gap-4 sm:flex-row sm:items-center">
-            <Button size="lg" className="w-full gap-2 sm:w-auto" asChild>
-              <Link href="/quotes">
-                <Search className="h-4 w-4" />
-                Search Thousands of Quotes
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" className="w-full gap-2 sm:w-auto" asChild>
-              <Link href="/scholars">
-                <Library className="h-4 w-4" />
-                Browse Scholars
-              </Link>
-            </Button>
-          </div>
+    <div className="home-page">
+      <section className="home-hero">
+        <div className="hero-eyebrow"><Library aria-hidden="true" /> Searchable scholarly quote archive</div>
+        <h1><span lang="ar" dir="rtl">جواهر السلف</span><span>Gems of the Salaf</span></h1>
+        <p>Explore beneficial sayings through Arabic originals, English translations, scholars, topics, source works, and translators—with only the source details actually recorded for each entry.</p>
+        <form action="/quotes" method="get" className="hero-search" role="search">
+          <label htmlFor="home-search" className="sr-only">Search English, Arabic, scholars, sources, translators, categories, and tags</label>
+          <Search aria-hidden="true" />
+          <input id="home-search" name="q" type="search" maxLength={200} placeholder="Search English, Arabic, a scholar, or a source…" />
+          <button type="submit">Search archive</button>
+        </form>
+        <div className="hero-actions">
+          <Link href="/quotes">Browse quotes <ArrowRight aria-hidden="true" /></Link>
+          <Link href="/scholars" className="secondary">Browse scholars <Users aria-hidden="true" /></Link>
+          <a href={TELEGRAM_URL} target="_blank" rel="noreferrer" className="text-link"><Send aria-hidden="true" /> Telegram</a>
         </div>
       </section>
 
-      {/* Categories & Stats */}
-      <section className="py-20 bg-background px-4">
-        <div className="container mx-auto max-w-6xl">
-          <div className="flex flex-col gap-4 text-center md:text-left mb-12">
-            <h3 className="font-serif text-3xl font-bold">Explore the Archive</h3>
-            <p className="text-muted-foreground max-w-2xl">
-              Browse by scholarly topics, view the major works of the Salaf, or search for specific guidance on purification of the heart, Tawhid, and knowledge.
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <Link href="/categories/tawhid" className="group flex flex-col items-center justify-center gap-4 rounded-xl border bg-card p-8 text-center transition-all hover:border-primary hover:shadow-md">
-              <span className="font-arabic text-2xl font-bold">التوحيد</span>
-              <span className="font-serif font-semibold">Tawhid</span>
-              <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">Browse <ArrowRight className="h-3 w-3" /></span>
-            </Link>
-            <Link href="/categories/knowledge" className="group flex flex-col items-center justify-center gap-4 rounded-xl border bg-card p-8 text-center transition-all hover:border-primary hover:shadow-md">
-              <span className="font-arabic text-2xl font-bold">العلم</span>
-              <span className="font-serif font-semibold">Knowledge</span>
-              <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">Browse <ArrowRight className="h-3 w-3" /></span>
-            </Link>
-            <Link href="/categories/heart" className="group flex flex-col items-center justify-center gap-4 rounded-xl border bg-card p-8 text-center transition-all hover:border-primary hover:shadow-md">
-              <span className="font-arabic text-2xl font-bold">تزكية النفس</span>
-              <span className="font-serif font-semibold">Purification</span>
-              <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">Browse <ArrowRight className="h-3 w-3" /></span>
-            </Link>
-            <Link href="/scholars/ibn-taymiyyah" className="group flex flex-col items-center justify-center gap-4 rounded-xl border bg-card p-8 text-center transition-all hover:border-primary hover:shadow-md">
-              <span className="font-arabic text-2xl font-bold">ابن تيمية</span>
-              <span className="font-serif font-semibold">Ibn Taymiyyah</span>
-              <span className="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">Browse <ArrowRight className="h-3 w-3" /></span>
-            </Link>
-          </div>
-        </div>
-      </section>
+      {!result.ok ? (
+        <section className="home-data-section"><DataUnavailable message={result.message} /></section>
+      ) : (
+        <>
+          <section className="home-data-section featured-section" aria-labelledby="featured-heading">
+            <div className="section-heading">
+              <div><span>Selected from the archive</span><h2 id="featured-heading">Featured quote</h2></div>
+              <Link href="/quotes?sort=latest">Browse the archive <ArrowRight aria-hidden="true" /></Link>
+            </div>
+            {result.data.featured ? <QuoteCard quote={result.data.featured} /> : (
+              <EmptyState title="No featured quote yet" description="An editor has not selected a featured published quote." />
+            )}
+          </section>
 
-      {/* About CTA Section */}
-      <section className="border-t bg-muted/20 py-24 px-4">
-        <div className="container mx-auto max-w-4xl text-center flex flex-col items-center gap-8">
-          <BookOpen className="h-12 w-12 text-primary" />
-          <h3 className="font-serif text-3xl md:text-4xl font-bold">Preserving the Heritage</h3>
-          <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl">
-            Our mission is to digitally archive and categorize the rich intellectual and spiritual heritage of the early generations of Muslims, providing an accessible, authentic reference for students of knowledge worldwide.
-          </p>
-          <Button size="lg" asChild>
-            <Link href="/about">Learn More</Link>
-          </Button>
+          <section className="home-data-section" aria-labelledby="latest-heading">
+            <div className="section-heading">
+              <div><span>Recently published</span><h2 id="latest-heading">Latest quotes</h2></div>
+              <Link href="/quotes">View all quotes <ArrowRight aria-hidden="true" /></Link>
+            </div>
+            {result.data.latest.length ? (
+              <div className="quote-grid">{result.data.latest.slice(0, 4).map((quote) => <QuoteCard key={quote.id} quote={quote} compact />)}</div>
+            ) : <EmptyState title="The archive is ready for reviewed entries" description="No published quotes are available yet." />}
+          </section>
+
+          <BrowseSection title="Browse scholars" eyebrow="People in the archive" icon={<Users />} href="/scholars" items={result.data.scholars.map((item) => ({ ...item, href: `/scholars/${item.slug}` }))} />
+          <BrowseSection title="Browse categories" eyebrow="Topics and themes" icon={<Library />} href="/categories" items={result.data.categories.map((item) => ({ ...item, href: `/categories/${item.slug}` }))} />
+          <BrowseSection title="Browse sources" eyebrow="Works and references" icon={<BookOpen />} href="/sources" items={result.data.sources.map((item) => ({ ...item, href: `/sources/${item.slug}` }))} />
+          <BrowseSection title="Browse translators" eyebrow="English renderings" icon={<span aria-hidden="true">Aa</span>} href="/translators" items={result.data.translators.map((item) => ({ ...item, href: `/translators/${item.slug}` }))} />
+        </>
+      )}
+
+      <section className="home-about" aria-labelledby="home-about-heading">
+        <div>
+          <span>About the project</span>
+          <h2 id="home-about-heading">A navigable record, built around content integrity.</h2>
+        </div>
+        <div>
+          <p>The archive connects every published quotation to its recorded scholar, source, categories, tags, and translator. Information that has not been established remains absent rather than being filled with assumptions.</p>
+          <Link href="/about">How the archive works <ArrowRight aria-hidden="true" /></Link>
         </div>
       </section>
     </div>
+  )
+}
+
+function BrowseSection({
+  title,
+  eyebrow,
+  icon,
+  href,
+  items,
+}: {
+  title: string
+  eyebrow: string
+  icon: React.ReactNode
+  href: string
+  items: Array<{ id: string; name: string; arabicName?: string | null; quoteCount: number; href: string }>
+}) {
+  return (
+    <section className="home-data-section browse-section" aria-labelledby={`${title.replace(/\s+/g, '-').toLowerCase()}-heading`}>
+      <div className="section-heading">
+        <div><span>{eyebrow}</span><h2 id={`${title.replace(/\s+/g, '-').toLowerCase()}-heading`}>{title}</h2></div>
+        <Link href={href}>View directory <ArrowRight aria-hidden="true" /></Link>
+      </div>
+      {items.length ? (
+        <div className="browse-grid">
+          {items.map((item) => (
+            <Link key={item.id} href={item.href} className="browse-tile">
+              <span className="browse-icon" aria-hidden="true">{icon}</span>
+              <span className="browse-name">{item.name}</span>
+              {item.arabicName ? <span className="browse-arabic" lang="ar" dir="rtl">{item.arabicName}</span> : null}
+              <span className="browse-count">{item.quoteCount.toLocaleString()} {item.quoteCount === 1 ? 'quote' : 'quotes'}</span>
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          ))}
+        </div>
+      ) : <EmptyState title={`No ${title.toLowerCase()} yet`} description="Published archive records will appear here." />}
+    </section>
   )
 }

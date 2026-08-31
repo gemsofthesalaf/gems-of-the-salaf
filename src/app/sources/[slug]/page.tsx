@@ -1,107 +1,43 @@
-import { notFound } from "next/navigation"
-import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
-import { Database } from "@/lib/supabase/types"
-import { QuoteCard, QuoteData } from "@/components/quotes/QuoteCard"
-import { ArrowLeft, Book } from "lucide-react"
-import type { Metadata, ResolvingMetadata } from "next"
+import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
+import { Breadcrumbs } from '@/components/common/Breadcrumbs'
+import { DataUnavailable } from '@/components/common/DataState'
+import { JsonLd } from '@/components/common/JsonLd'
+import { EntityQuoteCollection } from '@/components/directory/EntityQuoteCollection'
+import { getSourceBySlug } from '@/data/public'
+import { absoluteUrl, truncateDescription } from '@/lib/site'
+import { parsePageParam, slugSchema } from '@/lib/validation'
 
-export const dynamic = "force-dynamic"
+export const dynamic = 'force-dynamic'
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }
 
-export async function generateMetadata(
-  props: { params: Promise<{ slug: string }> },
-  _parent: ResolvingMetadata
-): Promise<Metadata> {
-  const params = await props.params
-  const supabase = await createClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase.from('sources') as any)
-    .select(`title, author`)
-    .eq('slug', params.slug)
-    .single()
-    
-  if (!data) return { title: "Source Not Found" }
-
-  return {
-    title: `Quotes from ${data.title}`,
-    description: `Explore quotes from ${data.title} by ${data.author || 'Unknown'}.`,
-  }
+export async function generateMetadata({ params }: Pick<Props, 'params'>): Promise<Metadata> {
+  const parsed = slugSchema.safeParse((await params).slug)
+  if (!parsed.success) return { title: 'Source not found', robots: { index: false, follow: false } }
+  const result = await getSourceBySlug(parsed.data)
+  if (!result.ok || !result.data) return { title: 'Source not found', robots: { index: false, follow: false } }
+  const source = result.data
+  const description = truncateDescription(`Browse published quotations recorded from ${source.title}${source.author ? ` by ${source.author}` : ''}.`)
+  const path = `/sources/${source.slug}`
+  return { title: source.title, description, alternates: { canonical: path }, openGraph: { title: source.title, description, url: path, images: [] }, twitter: { card: 'summary', title: source.title, description, images: [] } }
 }
 
-export default async function SourcePage(props: { params: Promise<{ slug: string }> }) {
-  const params = await props.params
-  const supabase = await createClient()
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: source, error: sourceError } = await (supabase.from('sources') as any)
-    .select('*')
-    .eq('slug', params.slug)
-    .single()
-    
-  if (sourceError) {
-    return <div className="p-8 text-center text-red-500 bg-red-50 rounded-lg">Failed to load source. Error: {sourceError.message}</div>
-  }
-
-  if (!source) {
-    notFound()
-  }
-
-  // Fetch quotes linked to this source
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: quotesData } = await (supabase.from('quotes') as any)
-    .select(`
-      *,
-      scholars!inner ( english_name, slug )
-    `)
-    .eq('source_id', source.id)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    
-  const quotes = quotesData as (Database['public']['Tables']['quotes']['Row'] & { scholars: { english_name: string, slug: string } })[]
-
+export default async function SourcePage({ params, searchParams }: Props) {
+  const parsed = slugSchema.safeParse((await params).slug)
+  if (!parsed.success) notFound()
+  const result = await getSourceBySlug(parsed.data)
+  if (!result.ok) return <div className="page-shell"><DataUnavailable message={result.message} headingLevel={1} /></div>
+  if (!result.data) notFound()
+  const source = result.data
+  const page = parsePageParam((await searchParams).page)
+  const schema = { '@context': 'https://schema.org', '@type': 'CollectionPage', name: source.title, url: absoluteUrl(`/sources/${source.slug}`) }
   return (
-    <div className="container mx-auto px-4 py-12 max-w-5xl flex flex-col gap-12">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/sources" className="hover:text-foreground flex items-center gap-1 transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back to Sources
-        </Link>
-      </div>
-
-      <div className="flex flex-col gap-6 items-center text-center">
-        <div className="flex flex-col items-center justify-center p-8 bg-muted/20 border rounded-3xl w-full gap-4 shadow-sm">
-          <Book className="h-12 w-12 text-primary opacity-50 mb-2" />
-          <h1 className="font-serif text-4xl md:text-5xl font-bold">{source.title}</h1>
-          {source.arabic_title && (
-            <span className="font-arabic text-3xl text-muted-foreground">{source.arabic_title}</span>
-          )}
-          {source.author && (
-            <p className="text-xl text-muted-foreground mt-2">
-              By {source.author}
-            </p>
-          )}
-          {source.publisher && (
-            <p className="text-sm text-muted-foreground">
-              Publisher: {source.publisher}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <h2 className="font-serif text-3xl font-semibold border-b pb-4">Quotes from this Source ({quotes?.length || 0})</h2>
-        
-        {quotes && quotes.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {quotes.map((quote) => (
-              <QuoteCard key={quote.id} quote={quote as unknown as QuoteData} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center p-12 text-muted-foreground bg-muted/10 rounded-xl border">
-            No quotes available from this source yet.
-          </div>
-        )}
-      </div>
+    <div className="page-shell entity-page">
+      <JsonLd value={schema} />
+      <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Sources', href: '/sources' }, { label: source.title }]} />
+      <header className="entity-hero"><span>Source record</span><h1>{source.title}</h1>{source.arabic_title ? <p className="entity-arabic" lang="ar" dir="rtl">{source.arabic_title}</p> : null}{source.author ? <p className="entity-meta">Author: {source.author}</p> : null}</header>
+      {(source.publisher || source.edition) ? <dl className="source-citation">{source.publisher ? <div><dt>Publisher</dt><dd>{source.publisher}</dd></div> : null}{source.edition ? <div><dt>Edition</dt><dd>{source.edition}</dd></div> : null}</dl> : null}
+      <EntityQuoteCollection heading={`Quotes recorded from ${source.title}`} pathname={`/sources/${source.slug}`} filter={{ source: source.slug }} page={page} />
     </div>
   )
 }

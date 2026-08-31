@@ -1,30 +1,27 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import 'server-only'
+
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Database } from './types'
 
-export async function createClient() {
-  const cookieStore = await cookies()
+function hasValidPublicConfiguration(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key || key.length < 20) return false
 
-  return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
-      },
-    }
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' || parsed.hostname === 'localhost'
+  } catch {
+    return false
+  }
+}
+
+export function createPublicClient(): SupabaseClient<Database> | null {
+  if (!hasValidPublicConfiguration()) return null
+
+  return createSupabaseClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
 }

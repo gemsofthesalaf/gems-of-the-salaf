@@ -1,10 +1,16 @@
+import 'server-only'
+
 import { createClient } from '@supabase/supabase-js'
 import { Database } from './types'
 
 // Note: This should ONLY be used in server environments (API routes, Server Actions)
 // and ONLY when administrative privileges are explicitly required and authorized.
 export function createAdminClient() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY.length < 20
+  ) {
     throw new Error('Missing Supabase Service Role configuration')
   }
 

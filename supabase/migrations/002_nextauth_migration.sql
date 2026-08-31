@@ -1,6 +1,6 @@
 -- Migration to support NextAuth Credentials provider
 
--- Add password_hash column to public.admins
+-- Add the credential hash used by the NextAuth Credentials provider.
 ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
 -- Drop the old RLS policies that rely on auth.uid()
@@ -9,5 +9,5 @@ ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS password_hash TEXT;
 -- OR we can leave them for backward compatibility if the user ever goes back.
 -- It's safer to leave them, since they won't trigger (auth.uid() will be null).
 
--- Wait, if they use the Service Role key, it bypasses RLS entirely.
--- We must make sure they ONLY mutate via Service Role Key now.
+-- Administrative mutations use the service role only after a fresh server-side
+-- NextAuth administrator check. The service role key is never exposed publicly.

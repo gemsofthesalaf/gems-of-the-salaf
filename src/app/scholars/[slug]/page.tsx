@@ -1,109 +1,51 @@
-import { notFound } from "next/navigation"
-import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
-import { Database } from "@/lib/supabase/types"
-import { QuoteCard, QuoteData } from "@/components/quotes/QuoteCard"
-import { ArrowLeft, BookOpen } from "lucide-react"
-import type { Metadata, ResolvingMetadata } from "next"
+import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
+import { Breadcrumbs } from '@/components/common/Breadcrumbs'
+import { DataUnavailable } from '@/components/common/DataState'
+import { JsonLd } from '@/components/common/JsonLd'
+import { EntityQuoteCollection } from '@/components/directory/EntityQuoteCollection'
+import { getScholarBySlug } from '@/data/public'
+import { absoluteUrl, truncateDescription } from '@/lib/site'
+import { parsePageParam, slugSchema } from '@/lib/validation'
 
-export const dynamic = "force-dynamic"
+export const dynamic = 'force-dynamic'
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }
 
-export async function generateMetadata(
-  props: { params: Promise<{ slug: string }> },
-  _parent: ResolvingMetadata
-): Promise<Metadata> {
-  const params = await props.params
-  const supabase = await createClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase.from('scholars') as any)
-    .select(`english_name, biography`)
-    .eq('slug', params.slug)
-    .single()
-    
-  if (!data) return { title: "Scholar Not Found" }
-
-  return {
-    title: `${data.english_name} Quotes & Biography`,
-    description: data.biography ? data.biography.substring(0, 150) + "..." : `Explore the quotes and sayings of ${data.english_name}.`,
-  }
+export async function generateMetadata({ params }: Pick<Props, 'params'>): Promise<Metadata> {
+  const parsed = slugSchema.safeParse((await params).slug)
+  if (!parsed.success) return { title: 'Scholar not found', robots: { index: false, follow: false } }
+  const result = await getScholarBySlug(parsed.data)
+  if (!result.ok || !result.data) return { title: 'Scholar not found', robots: { index: false, follow: false } }
+  const scholar = result.data
+  const description = truncateDescription(scholar.biography ?? `Browse published quotations attributed to ${scholar.english_name}.`)
+  const path = `/scholars/${scholar.slug}`
+  return { title: scholar.english_name, description, alternates: { canonical: path }, openGraph: { title: scholar.english_name, description, url: path, images: [] }, twitter: { card: 'summary', title: scholar.english_name, description, images: [] } }
 }
 
-export default async function ScholarPage(props: { params: Promise<{ slug: string }> }) {
-  const params = await props.params
-  const supabase = await createClient()
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: scholar, error: scholarError } = await (supabase.from('scholars') as any)
-    .select('*')
-    .eq('slug', params.slug)
-    .single()
-    
-  if (scholarError) {
-    return <div className="p-8 text-center text-red-500 bg-red-50 rounded-lg">Failed to load scholar. Error: {scholarError.message}</div>
+export default async function ScholarPage({ params, searchParams }: Props) {
+  const parsed = slugSchema.safeParse((await params).slug)
+  if (!parsed.success) notFound()
+  const result = await getScholarBySlug(parsed.data)
+  if (!result.ok) return <div className="page-shell"><DataUnavailable message={result.message} headingLevel={1} /></div>
+  if (!result.data) notFound()
+  const scholar = result.data
+  const page = parsePageParam((await searchParams).page)
+  const schema = {
+    '@context': 'https://schema.org', '@type': 'Person', name: scholar.english_name,
+    alternateName: scholar.arabic_name ?? undefined, description: scholar.biography ?? undefined,
+    url: absoluteUrl(`/scholars/${scholar.slug}`),
   }
-
-  if (!scholar) {
-    notFound()
-  }
-
-  // Fetch quotes by this scholar
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: quotesData } = await (supabase.from('quotes') as any)
-    .select(`
-      *,
-      scholars!inner ( english_name, slug )
-    `)
-    .eq('scholar_id', scholar.id)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    
-  const quotes = quotesData as (Database['public']['Tables']['quotes']['Row'] & { scholars: { english_name: string, slug: string } })[]
-
   return (
-    <div className="container mx-auto px-4 py-12 max-w-5xl flex flex-col gap-12">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/scholars" className="hover:text-foreground flex items-center gap-1 transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back to Scholars
-        </Link>
-      </div>
-
-      <div className="flex flex-col gap-6 items-center text-center">
-        <div className="flex flex-col items-center justify-center p-8 bg-muted/20 border rounded-3xl w-full gap-4 shadow-sm">
-          <h1 className="font-serif text-4xl md:text-5xl font-bold">{scholar.english_name}</h1>
-          {scholar.arabic_name && (
-            <span className="font-arabic text-3xl text-muted-foreground">{scholar.arabic_name}</span>
-          )}
-          {scholar.death_year && (
-            <span className="text-sm font-medium bg-primary/10 text-primary px-3 py-1 rounded-full">
-              Died: {scholar.death_year}
-            </span>
-          )}
-          {scholar.biography && (
-            <p className="max-w-2xl text-lg text-muted-foreground mt-4 leading-relaxed">
-              {scholar.biography}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-3 border-b pb-4">
-          <BookOpen className="h-6 w-6 text-primary" />
-          <h2 className="font-serif text-3xl font-semibold">Quotes ({quotes?.length || 0})</h2>
-        </div>
-        
-        {quotes && quotes.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {quotes.map((quote) => (
-              <QuoteCard key={quote.id} quote={quote as unknown as QuoteData} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center p-12 text-muted-foreground bg-muted/10 rounded-xl border">
-            No quotes available for this scholar yet.
-          </div>
-        )}
-      </div>
+    <div className="page-shell entity-page">
+      <JsonLd value={schema} />
+      <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Scholars', href: '/scholars' }, { label: scholar.english_name }]} />
+      <header className="entity-hero">
+        <span>Scholar record</span><h1>{scholar.english_name}</h1>
+        {scholar.arabic_name ? <p className="entity-arabic" lang="ar" dir="rtl">{scholar.arabic_name}</p> : null}
+        {scholar.death_year ? <p className="entity-meta">Recorded death year: {scholar.death_year}</p> : null}
+        {scholar.biography ? <p className="entity-description">{scholar.biography}</p> : null}
+      </header>
+      <EntityQuoteCollection heading={`Quotes attributed to ${scholar.english_name}`} pathname={`/scholars/${scholar.slug}`} filter={{ scholar: scholar.slug }} page={page} />
     </div>
   )
 }

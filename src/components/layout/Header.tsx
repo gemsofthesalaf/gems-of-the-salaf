@@ -1,105 +1,83 @@
 'use client'
 
-import { useState } from "react"
-import Link from "next/link"
-import { Search, Library, Users, Menu, BookOpen, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import * as Dialog from '@radix-ui/react-dialog'
+import { BookOpen, Menu, Search, Send, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { TELEGRAM_URL } from '@/lib/site'
+
+const navigation = [
+  { href: '/quotes', label: 'Quotes' },
+  { href: '/scholars', label: 'Scholars' },
+  { href: '/categories', label: 'Categories' },
+  { href: '/sources', label: 'Sources' },
+  { href: '/translators', label: 'Translators' },
+  { href: '/about', label: 'About' },
+]
 
 export function Header() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+
+  if (pathname.startsWith('/admin')) return null
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-8">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center space-x-2" onClick={() => setIsMobileMenuOpen(false)}>
-            <BookOpen className="h-6 w-6 text-primary" />
-            <span className="hidden font-serif text-xl font-bold md:inline-block">
-              Gems of the Salaf
-            </span>
-            <span className="font-arabic text-2xl font-bold md:hidden">
-              جواهر السلف
-            </span>
-          </Link>
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-            <Link href="/quotes" className="transition-colors hover:text-foreground/80 text-foreground/60">
-              Quotes
-            </Link>
-            <Link href="/scholars" className="transition-colors hover:text-foreground/80 text-foreground/60">
-              Scholars
-            </Link>
-            <Link href="/categories" className="transition-colors hover:text-foreground/80 text-foreground/60">
-              Categories
-            </Link>
-            <Link href="/sources" className="transition-colors hover:text-foreground/80 text-foreground/60">
-              Sources
-            </Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild className="hidden md:flex">
-            <Link href="/quotes">
-              <Search className="h-5 w-5" />
-              <span className="sr-only">Search</span>
-            </Link>
+    <header className="site-header">
+      <div className="site-header-inner">
+        <Link href="/" className="brand-link" aria-label="Gems of the Salaf home">
+          <span className="brand-mark" aria-hidden="true"><BookOpen /></span>
+          <span className="brand-copy">
+            <span className="brand-arabic" lang="ar" dir="rtl">جواهر السلف</span>
+            <span className="brand-english">Gems of the Salaf</span>
+          </span>
+        </Link>
+
+        <nav className="desktop-nav" aria-label="Primary navigation">
+          {navigation.map((item) => <Link key={item.href} href={item.href}>{item.label}</Link>)}
+        </nav>
+
+        <div className="header-actions">
+          <Button asChild variant="ghost" size="icon" className="desktop-search">
+            <Link href="/quotes" aria-label="Search the archive"><Search /></Link>
           </Button>
-          <Button variant="outline" size="sm" asChild className="hidden md:inline-flex border-primary text-primary hover:bg-primary/10 transition-colors">
-            <Link href="https://t.me/gemsofthesalaf" target="_blank" rel="noreferrer">
-              Telegram
-            </Link>
+          <Button asChild variant="outline" className="desktop-telegram">
+            <a href={TELEGRAM_URL} target="_blank" rel="noreferrer"><Send /> Telegram</a>
           </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="md:hidden" 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          >
-            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            <span className="sr-only">Toggle Menu</span>
-          </Button>
+
+          <Dialog.Root open={open} onOpenChange={setOpen}>
+            <Dialog.Trigger asChild>
+              <Button type="button" variant="ghost" size="icon" className="mobile-menu-trigger" aria-label="Open navigation menu">
+                <Menu />
+              </Button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="mobile-nav-overlay" />
+              <Dialog.Content className="mobile-nav-content" aria-describedby={undefined}>
+                <div className="mobile-nav-header">
+                  <Dialog.Title>Navigation</Dialog.Title>
+                  <Dialog.Close asChild>
+                    <Button type="button" variant="ghost" size="icon" aria-label="Close navigation menu"><X /></Button>
+                  </Dialog.Close>
+                </div>
+                <nav aria-label="Mobile navigation" className="mobile-nav-links">
+                  {navigation.map((item) => (
+                    <Dialog.Close asChild key={item.href}>
+                      <Link href={item.href}>{item.label}</Link>
+                    </Dialog.Close>
+                  ))}
+                </nav>
+                <div className="mobile-nav-footer">
+                  <Dialog.Close asChild>
+                    <a href={TELEGRAM_URL} target="_blank" rel="noreferrer"><Send /> Visit the Telegram channel</a>
+                  </Dialog.Close>
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
         </div>
       </div>
-
-      {/* Mobile Navigation Drawer */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 top-16 z-40 bg-background border-t">
-          <nav className="flex flex-col p-4 gap-4 h-full overflow-y-auto pb-20">
-            <Link 
-              href="/quotes" 
-              className="flex items-center gap-3 p-4 rounded-lg bg-muted/30 font-medium text-lg border hover:border-primary/50 transition-colors"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <Search className="h-5 w-5 text-primary" />
-              Search Quotes
-            </Link>
-            <Link 
-              href="/scholars" 
-              className="flex items-center gap-3 p-4 rounded-lg bg-muted/30 font-medium text-lg border hover:border-primary/50 transition-colors"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <Users className="h-5 w-5 text-primary" />
-              Browse Scholars
-            </Link>
-            <Link 
-              href="/categories" 
-              className="flex items-center gap-3 p-4 rounded-lg bg-muted/30 font-medium text-lg border hover:border-primary/50 transition-colors"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <Library className="h-5 w-5 text-primary" />
-              Topics & Categories
-            </Link>
-            
-            <div className="mt-8 flex flex-col gap-4 px-2">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">External Links</h3>
-              <Button asChild variant="outline" className="w-full justify-start border-primary text-primary hover:bg-primary/10">
-                <Link href="https://t.me/gemsofthesalaf" target="_blank">
-                  Join us on Telegram
-                </Link>
-              </Button>
-            </div>
-          </nav>
-        </div>
-      )}
     </header>
   )
 }

@@ -1,99 +1,20 @@
-import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Search } from "lucide-react"
-import { AdminQuoteActions } from "./AdminQuoteActions"
-import { Database } from "@/lib/supabase/types"
+import Link from 'next/link'
+import { Search } from 'lucide-react'
+import { getAdminQuotes } from '@/data/admin'
+import { adminQuoteListSchema } from '@/lib/validation'
+import { Pagination } from '@/components/common/Pagination'
+import { AdminQuoteActions } from './AdminQuoteActions'
 
-type AdminQuoteRow = Database['public']['Tables']['quotes']['Row'] & {
-  scholars: { english_name: string } | { english_name: string }[] | null
-}
+export const dynamic = 'force-dynamic'
 
-export default async function AdminQuotesPage() {
-  const supabase = await createClient()
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase.from('quotes') as any)
-    .select(`
-      id, 
-      slug, 
-      english_text, 
-      status, 
-      published_at,
-      scholars ( english_name )
-    `)
-    .order('created_at', { ascending: false })
-    .limit(50)
-
-  const quotes = data as AdminQuoteRow[]
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-serif font-bold tracking-tight">Manage Quotes</h1>
-          <p className="text-muted-foreground">View, edit, and publish quotes in the archive.</p>
-        </div>
-        <Button asChild className="gap-2">
-          <Link href="/admin/quotes/new">
-            <Plus className="h-4 w-4" />
-            New Quote
-          </Link>
-        </Button>
-      </div>
-
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="p-4 border-b bg-muted/20 flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <input 
-              placeholder="Search quotes..." 
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm"
-            />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b">
-              <tr>
-                <th className="px-6 py-3">Quote snippet</th>
-                <th className="px-6 py-3">Scholar</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quotes?.map((quote) => {
-                const scholarName = Array.isArray(quote.scholars) ? quote.scholars[0]?.english_name : quote.scholars?.english_name
-                const snippet = quote.english_text.length > 60 ? quote.english_text.substring(0, 60) + '...' : quote.english_text
-                
-                return (
-                  <tr key={quote.id} className="border-b last:border-0 hover:bg-muted/10 transition-colors">
-                    <td className="px-6 py-4 font-medium text-foreground">{snippet}</td>
-                    <td className="px-6 py-4">{scholarName || 'Unknown'}</td>
-                    <td className="px-6 py-4">
-                      <Badge variant={quote.status === 'published' ? 'default' : quote.status === 'draft' ? 'secondary' : 'outline'}>
-                        {quote.status}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <AdminQuoteActions quoteId={quote.id} />
-                    </td>
-                  </tr>
-                )
-              })}
-              {(!quotes || quotes.length === 0) && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
-                    No quotes found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  )
+export default async function AdminQuotesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const raw = await searchParams; const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value
+  const filters = adminQuoteListSchema.parse({ q: first(raw.q), status: first(raw.status), sort: first(raw.sort), page: first(raw.page) })
+  const result = await getAdminQuotes({ query: filters.q, status: filters.status, sort: filters.sort, page: filters.page })
+  return <div className="admin-page">
+    <div className="admin-page-heading"><div><p className="eyebrow">Editorial archive</p><h1>Quotes</h1><p>{result.total.toLocaleString()} matching {result.total === 1 ? 'record' : 'records'}.</p></div><Link className="button button-primary" href="/admin/quotes/new">New quote</Link></div>
+    <form className="admin-filter-bar" action="/admin/quotes"><label className="search-field"><Search aria-hidden="true" /><span className="sr-only">Search quotes</span><input name="q" defaultValue={filters.q} placeholder="Search English translation" maxLength={200} /></label><label><span className="sr-only">Status</span><select name="status" defaultValue={filters.status} className="field-control"><option value="all">All statuses</option><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label><span className="sr-only">Sort</span><select name="sort" defaultValue={filters.sort} className="field-control"><option value="newest">Newest created</option><option value="updated">Recently updated</option><option value="oldest">Oldest created</option><option value="scholar">Scholar</option></select></label><button className="button button-secondary" type="submit">Apply</button>{(filters.q || filters.status !== 'all' || filters.sort !== 'newest') && <Link className="text-link" href="/admin/quotes">Clear</Link>}</form>
+    <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th scope="col">Quotation</th><th scope="col">Scholar</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{result.items.map((quote) => <tr key={quote.id}><td><strong>{quote.englishText.slice(0, 100)}{quote.englishText.length > 100 ? '…' : ''}</strong>{quote.arabicText && <span className="table-arabic" lang="ar" dir="rtl">{quote.arabicText.slice(0, 90)}{quote.arabicText.length > 90 ? '…' : ''}</span>}</td><td>{quote.scholarName}</td><td><span className={`status-badge status-${quote.status}`}>{quote.status}</span>{quote.featured && <span className="status-badge">featured</span>}</td><td><time dateTime={quote.updatedAt}>{new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(quote.updatedAt))}</time></td><td><AdminQuoteActions quote={quote} /></td></tr>)}{!result.items.length && <tr><td colSpan={5} className="empty-cell">No quotes match these filters.</td></tr>}</tbody></table></div>
+    <Pagination pathname="/admin/quotes" params={{ q: filters.q || undefined, status: filters.status === 'all' ? undefined : filters.status, sort: filters.sort === 'newest' ? undefined : filters.sort }} page={result.page} totalPages={result.totalPages} />
+  </div>
 }

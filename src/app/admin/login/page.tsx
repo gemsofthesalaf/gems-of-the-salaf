@@ -3,86 +3,30 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signIn } from 'next-auth/react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { ShieldAlert } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 
-export default function AdminLogin() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+export default function AdminLoginPage() {
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const router = useRouter()
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
-    const res = await signIn('credentials', {
-      redirect: false,
-      email,
-      password,
-    })
-
-    if (res?.error) {
-      setError(res.error)
-      setLoading(false)
-    } else {
-      router.push('/admin')
-      router.refresh()
-    }
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError('')
+    const form = new FormData(event.currentTarget)
+    const result = await signIn('credentials', { redirect: false, email: String(form.get('email') ?? ''), password: String(form.get('password') ?? '') })
+    if (!result?.ok) { setError('The email or password is incorrect, or this account is not authorized.'); setBusy(false); return }
+    router.replace('/admin'); router.refresh()
   }
 
   return (
-    <div className="flex min-h-[80vh] items-center justify-center">
-      <Card className="w-full max-w-md mx-auto">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <ShieldAlert className="h-12 w-12 text-primary" />
-          </div>
-          <CardTitle className="text-2xl font-serif">Admin Portal</CardTitle>
-          <CardDescription>
-            Authenticate to access the Gems of the Salaf management system.
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleLogin}>
-          <CardContent className="space-y-4">
-            {error && (
-              <div className="bg-red-50 text-red-500 p-3 rounded-md text-sm text-center">
-                {error}
-              </div>
-            )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="email">Email</label>
-              <Input 
-                id="email" 
-                type="email" 
-                placeholder="admin@example.com" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="password">Password</label>
-              <Input 
-                id="password" 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button className="w-full" type="submit" disabled={loading}>
-              {loading ? 'Authenticating...' : 'Sign In'}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
+    <section className="login-panel" aria-labelledby="login-title"><div className="login-card">
+      <ShieldCheck className="login-icon" aria-hidden="true" /><p className="eyebrow">Restricted access</p><h1 id="login-title">Administration</h1><p className="muted-copy">Sign in with an active administrator account.</p>
+      <form onSubmit={submit} className="form-stack">
+        {error && <div className="form-alert form-alert-error" role="alert">{error}</div>}
+        <label className="field-label" htmlFor="email">Email</label><input id="email" name="email" className="field-control" type="email" autoComplete="username" required maxLength={254} />
+        <label className="field-label" htmlFor="password">Password</label><input id="password" name="password" className="field-control" type="password" autoComplete="current-password" required maxLength={256} />
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Authenticating…' : 'Sign in'}</button>
+      </form>
+    </div></section>
   )
 }

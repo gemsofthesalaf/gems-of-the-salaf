@@ -1,129 +1,136 @@
-import { notFound } from "next/navigation"
-import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
-import { Database } from "@/lib/supabase/types"
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { BookOpen, ExternalLink, Languages, Tags, UserRound } from 'lucide-react'
+import { Breadcrumbs } from '@/components/common/Breadcrumbs'
+import { DataUnavailable } from '@/components/common/DataState'
+import { JsonLd } from '@/components/common/JsonLd'
+import { QuoteActions } from '@/components/quotes/QuoteActions'
+import { QuoteCard } from '@/components/quotes/QuoteCard'
+import { getQuoteBySlug, getRelatedQuotes } from '@/data/public'
+import { absoluteUrl, truncateDescription } from '@/lib/site'
+import { slugSchema } from '@/lib/validation'
 
-import { ArrowLeft, Book, User } from "lucide-react"
-import { QuoteActions } from "@/components/quotes/QuoteActions"
-import type { Metadata, ResolvingMetadata } from "next"
+export const dynamic = 'force-dynamic'
 
-export const dynamic = "force-dynamic"
+type Props = { params: Promise<{ slug: string }> }
 
-export async function generateMetadata(
-  props: { params: Promise<{ slug: string }> },
-  _parent: ResolvingMetadata
-): Promise<Metadata> {
-  const params = await props.params
-  const supabase = await createClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase.from('quotes') as any)
-    .select(`english_text, scholars(english_name)`)
-    .eq('slug', params.slug)
-    .single()
-    
-  const quote = data as { english_text: string, scholars: { english_name: string } | { english_name: string }[] | null } | null
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const rawSlug = (await params).slug
+  const parsed = slugSchema.safeParse(rawSlug)
+  if (!parsed.success) return { title: 'Quote not found', robots: { index: false, follow: false } }
+  const result = await getQuoteBySlug(parsed.data)
+  if (!result.ok || !result.data) return { title: 'Quote not found', robots: { index: false, follow: false } }
 
-  if (!quote) return { title: "Quote Not Found" }
-
-  const scholarName = Array.isArray(quote.scholars) ? quote.scholars[0]?.english_name : quote.scholars?.english_name
-  const shortText = quote.english_text.length > 100 ? quote.english_text.substring(0, 100) + '...' : quote.english_text
-
+  const quote = result.data
+  const title = `Quote by ${quote.scholar.english_name}`
+  const description = truncateDescription(quote.englishText)
+  const path = `/quotes/${quote.slug}`
   return {
-    title: `Quote by ${scholarName}`,
-    description: shortText,
+    title,
+    description,
+    alternates: { canonical: path },
+    openGraph: { title, description, url: path, type: 'article', images: [] },
+    twitter: { card: 'summary', title, description, images: [] },
   }
 }
 
-export default async function QuotePage(props: { params: Promise<{ slug: string }> }) {
-  const params = await props.params
-  const supabase = await createClient()
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase.from('quotes') as any)
-    .select(`
-      *,
-      scholars ( english_name, arabic_name, slug, death_year ),
-      sources ( title, author, slug )
-    `)
-    .eq('slug', params.slug)
-    .eq('status', 'published')
-    .single()
-    
-  const quote = data as Database['public']['Tables']['quotes']['Row'] & {
-    scholars: { english_name: string, arabic_name: string | null, slug: string, death_year: string | null } | { english_name: string, arabic_name: string | null, slug: string, death_year: string | null }[] | null,
-    sources: { title: string, author: string | null, slug: string } | { title: string, author: string | null, slug: string }[] | null
-  } | null
+export default async function QuoteDetailPage({ params }: Props) {
+  const parsed = slugSchema.safeParse((await params).slug)
+  if (!parsed.success) notFound()
+  const result = await getQuoteBySlug(parsed.data)
+  if (!result.ok) return <div className="page-shell"><DataUnavailable message={result.message} headingLevel={1} /></div>
+  if (!result.data) notFound()
+  const quote = result.data
+  const related = await getRelatedQuotes(quote)
+  const canonicalUrl = absoluteUrl(`/quotes/${quote.slug}`)
+  const externalReference = quote.externalReference && /^https?:\/\//i.test(quote.externalReference)
+    ? quote.externalReference
+    : null
 
-  if (error || !quote) {
-    notFound()
+  const schema = {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: `Quote by ${quote.scholar.english_name}`,
+    url: canonicalUrl,
+    description: truncateDescription(quote.englishText),
+    datePublished: quote.publishedAt ?? undefined,
+    dateModified: quote.updatedAt,
+    mainEntity: {
+      '@type': 'Quotation',
+      text: quote.englishText,
+      spokenByCharacter: quote.scholar.english_name,
+    },
   }
-  
-  // Format the data for the component
-  const scholar = Array.isArray(quote.scholars) ? quote.scholars[0] : quote.scholars
-  const source = Array.isArray(quote.sources) ? quote.sources[0] : quote.sources
-  
+
   return (
-    <div className="container mx-auto px-4 py-12 max-w-4xl flex flex-col gap-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/quotes" className="hover:text-foreground flex items-center gap-1 transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back to Archive
-        </Link>
-      </div>
+    <div className="page-shell quote-detail-page">
+      <JsonLd value={schema} />
+      <Breadcrumbs items={[{ label: 'Home', href: '/' }, { label: 'Quotes', href: '/quotes' }, { label: quote.scholar.english_name }]} />
 
-      <div className="flex flex-col gap-10">
-        {/* Quote Content */}
-        <div className="flex flex-col gap-8 rounded-2xl border bg-card p-8 md:p-12 shadow-sm">
-          {quote.arabic_text && (
-            <p dir="rtl" className="font-arabic text-3xl md:text-4xl leading-relaxed text-foreground text-center">
-              {quote.arabic_text}
-            </p>
-          )}
-          
-          <div className="h-px w-1/3 bg-border mx-auto opacity-50" />
-          
-          <p className="font-serif text-xl md:text-2xl leading-relaxed text-foreground/90 whitespace-pre-wrap text-center">
-            {quote.english_text}
-          </p>
-          
-          <QuoteActions quoteSlug={quote.slug} englishText={quote.english_text} />
+      <article className="quote-detail">
+        <header className="quote-detail-heading">
+          <span>Published quotation</span>
+          <h1>Words attributed to <Link href={`/scholars/${quote.scholar.slug}`}>{quote.scholar.english_name}</Link></h1>
+          {quote.scholar.arabic_name ? <p lang="ar" dir="rtl">{quote.scholar.arabic_name}</p> : null}
+        </header>
+        <div className="quote-detail-text">
+          {quote.arabicText ? <blockquote lang="ar" dir="rtl" className="detail-arabic">{quote.arabicText}</blockquote> : null}
+          <blockquote className="detail-english">{quote.englishText}</blockquote>
         </div>
+        <QuoteActions arabicText={quote.arabicText} englishText={quote.englishText} canonicalUrl={canonicalUrl} />
+      </article>
 
-        {/* Metadata Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {scholar && (
-            <div className="flex flex-col gap-3 rounded-xl border bg-muted/20 p-6">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <User className="h-4 w-4" />
-                <h3 className="text-sm font-semibold uppercase tracking-wider">Scholar</h3>
+      <section className="metadata-panel" aria-labelledby="record-heading">
+        <div className="section-heading compact"><div><span>Recorded information</span><h2 id="record-heading">Attribution and source</h2></div></div>
+        <dl className="metadata-grid">
+          <MetadataItem icon={<UserRound />} label="Scholar">
+            <Link href={`/scholars/${quote.scholar.slug}`}>{quote.scholar.english_name}</Link>
+            {quote.scholar.death_year ? <small>d. {quote.scholar.death_year}</small> : null}
+          </MetadataItem>
+          {quote.source ? (
+            <MetadataItem icon={<BookOpen />} label="Source">
+              <Link href={`/sources/${quote.source.slug}`}>{quote.source.title}</Link>
+              {quote.source.arabic_title ? <small lang="ar" dir="rtl">{quote.source.arabic_title}</small> : null}
+              {quote.source.author ? <small>{quote.source.author}</small> : null}
+            </MetadataItem>
+          ) : quote.book ? <MetadataItem icon={<BookOpen />} label="Book"><span>{quote.book}</span></MetadataItem> : null}
+          {quote.translator ? (
+            <MetadataItem icon={<Languages />} label="Translator"><Link href={`/translators/${quote.translator.slug}`}>{quote.translator.name}</Link></MetadataItem>
+          ) : null}
+          {quote.categories.length || quote.tags.length ? (
+            <MetadataItem icon={<Tags />} label="Topics">
+              <div className="chip-list">
+                {quote.categories.map((category) => <Link key={category.id} href={`/categories/${category.slug}`}>{category.name}</Link>)}
+                {quote.tags.map((tag) => <Link key={tag.id} href={`/quotes?tag=${encodeURIComponent(tag.slug)}`}>#{tag.name}</Link>)}
               </div>
-              <Link href={`/scholars/${scholar.slug}`} className="font-serif text-xl font-bold hover:text-primary transition-colors">
-                {scholar.english_name}
-              </Link>
-              {scholar.arabic_name && <span className="font-arabic text-lg">{scholar.arabic_name}</span>}
-            </div>
-          )}
+            </MetadataItem>
+          ) : null}
+          {quote.volume ? <MetadataItem label="Volume"><span>{quote.volume}</span></MetadataItem> : null}
+          {quote.page ? <MetadataItem label="Page"><span>{quote.page}</span></MetadataItem> : null}
+          {quote.chapter ? <MetadataItem label="Chapter"><span>{quote.chapter}</span></MetadataItem> : null}
+          {quote.edition || quote.source?.edition ? <MetadataItem label="Edition"><span>{quote.edition ?? quote.source?.edition}</span></MetadataItem> : null}
+          {externalReference ? (
+            <MetadataItem label="External reference"><a href={externalReference} target="_blank" rel="noreferrer">Open reference <ExternalLink aria-hidden="true" /></a></MetadataItem>
+          ) : null}
+        </dl>
+      </section>
 
-          <div className="flex flex-col gap-3 rounded-xl border bg-muted/20 p-6">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1">
-              <Book className="h-4 w-4" />
-              <h3 className="text-sm font-semibold uppercase tracking-wider">Source Citation</h3>
-            </div>
-            {source ? (
-              <Link href={`/sources/${source.slug}`} className="font-serif text-xl font-bold hover:text-primary transition-colors">
-                {source.title}
-              </Link>
-            ) : (
-              <span className="font-serif text-xl font-bold">{quote.book || "Unknown Source"}</span>
-            )}
-            
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground mt-2">
-              {quote.volume && <span>Volume: {quote.volume}</span>}
-              {quote.page && <span>Page: {quote.page}</span>}
-              {quote.chapter && <span>Chapter: {quote.chapter}</span>}
-            </div>
-          </div>
-        </div>
-      </div>
+      <section aria-labelledby="related-heading">
+        <div className="section-heading"><div><span>Continue exploring</span><h2 id="related-heading">Related quotes</h2></div></div>
+        {!related.ok ? <DataUnavailable message={related.message} /> : related.data.length ? (
+          <div className="quote-grid">{related.data.map((item) => <QuoteCard key={item.id} quote={item} compact />)}</div>
+        ) : <p className="quiet-empty">No related published quotations are available yet.</p>}
+      </section>
+    </div>
+  )
+}
+
+function MetadataItem({ icon, label, children }: { icon?: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt>{icon}<span>{label}</span></dt>
+      <dd>{children}</dd>
     </div>
   )
 }
