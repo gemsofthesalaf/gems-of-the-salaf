@@ -33,8 +33,9 @@ Apply the SQL files in order:
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_nextauth_migration.sql`
 3. `supabase/migrations/003_final_production.sql`
+4. `supabase/migrations/004_security_audit.sql`
 
-The final migration adds normalized Arabic search, trigram indexes, stable database pagination, audit records, transactional quote saves/deletes, and safe tag merging. `supabase/seed.sql` is intentionally empty.
+Migration 003 adds normalized Arabic search, trigram indexes, stable database pagination, audit records, transactional quote saves/deletes, and safe tag merging. Migration 004 limits public quote columns, adds shared login throttling, treats search wildcards literally, and makes quote-state and taxonomy changes transactional. `supabase/seed.sql` is intentionally empty.
 
 Create an initial administrator by generating a bcrypt hash (cost 12 or greater) and inserting the email and hash directly through the secured Supabase SQL editor:
 
@@ -72,4 +73,4 @@ npm start
 
 ## Deployment
 
-Deploy the Next.js application to Vercel (or another compatible Node host), configure the production environment variables, apply all migrations to the production Supabase project, and verify the custom domain. Run the complete build and authenticated browser acceptance journey against a staging environment before promoting it.
+Deploy the Next.js application to Netlify (or another compatible Node host), configure the production environment variables, apply all migrations to the production Supabase project, and verify the custom domain. Set `NEXTAUTH_URL` and `NEXT_PUBLIC_SITE_URL` to `https://gemsofthesalaf.com`; set the Supabase URL and keys from the new Supabase project. Keep `SUPABASE_SERVICE_ROLE_KEY` and `NEXTAUTH_SECRET` server-only. Run the complete build and authenticated browser acceptance journey against a staging environment before promoting it.
