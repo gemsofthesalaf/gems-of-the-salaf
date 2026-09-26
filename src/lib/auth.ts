@@ -6,13 +6,13 @@ import bcrypt from 'bcrypt'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { sessionCookie } from '@/lib/auth-cookie'
-import { getNextAuthSecret } from '@/lib/auth-secret'
+import { getServerSecret } from '@/lib/auth-secret'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 const DUMMY_PASSWORD_HASH = '$2b$12$84cShtbxGbEC81wG5TRl0eNGROGgO.lM927PfK0fbpjJmDgQrLf5q'
 
 export const authOptions: NextAuthOptions = {
-  secret: getNextAuthSecret(),
+  secret: getServerSecret('NEXTAUTH_SECRET'),
   providers: [
     CredentialsProvider({
       name: 'Admin credentials',
