@@ -128,6 +128,20 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      get_public_directory: {
+        Args: { p_kind: string; p_search?: string | null; p_offset?: number; p_limit?: number }
+        Returns: Array<{
+          id: string
+          slug: string
+          name: string
+          arabic_name: string | null
+          secondary: string | null
+          description: string | null
+          quote_count: number
+          updated_at: string
+          total_count: number
+        }>
+      }
       admin_save_taxonomy: {
         Args: { p_kind: string; p_id: string | null; p_value: Json; p_actor_admin_id: string }
         Returns: string

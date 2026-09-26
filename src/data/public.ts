@@ -44,10 +44,6 @@ function pageOffset(page: number, pageSize: number): number {
   return offset
 }
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, '\\$&')
-}
-
 export type QuoteListItem = {
   id: string
   slug: string
@@ -368,68 +364,33 @@ export async function getDirectory(
 ): Promise<DataResult<DirectoryResult>> {
   return withPublicClient(async (client) => {
     const offset = pageOffset(page, pageSize)
-    const pattern = `%${escapeLike(search.trim().slice(0, 160))}%`
+    const normalizedSearch = search.trim().slice(0, 160)
+    const args = { p_kind: kind, p_search: normalizedSearch || null, p_offset: offset, p_limit: pageSize }
+    const { data, error } = await client.rpc('get_public_directory', args)
+    assertNoError(error)
+    const rows = data ?? []
+    let total = rows[0]?.total_count ?? 0
 
-    if (kind === 'scholars') {
-      let query = client
-        .from('scholars')
-        .select('id,slug,english_name,arabic_name,death_year,biography,updated_at,quotes(count)', { count: 'exact' })
-        .eq('is_archived', false)
-        .order('english_name').order('id')
-      if (search) query = query.ilike('english_name', pattern)
-      const { data, count } = await readCountedPage(query, offset, pageSize)
-      const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['scholars']['Row'] & { quotes: Array<{ count: number }> }>
-      return directoryResult(rows.map((row) => ({
-        id: row.id, slug: row.slug, name: row.english_name, arabicName: row.arabic_name,
-        secondary: row.death_year, description: row.biography, quoteCount: row.quotes[0]?.count ?? 0,
-        updatedAt: row.updated_at,
-      })), count ?? 0, page, pageSize)
+    // An out-of-range page has no row from which to read the windowed total.
+    // Fetch one row only in that case so the UI can recover to the last page.
+    if (rows.length === 0 && offset > 0) {
+      const { data: firstPage, error: firstPageError } = await client.rpc('get_public_directory', {
+        ...args, p_offset: 0, p_limit: 1,
+      })
+      assertNoError(firstPageError)
+      total = firstPage?.[0]?.total_count ?? 0
     }
 
-    if (kind === 'categories') {
-      let query = client
-        .from('categories')
-        .select('id,slug,name,arabic_name,description,updated_at,quote_categories(count)', { count: 'exact' })
-        .eq('is_archived', false)
-        .order('sort_order').order('name').order('id')
-      if (search) query = query.ilike('name', pattern)
-      const { data, count } = await readCountedPage(query, offset, pageSize)
-      const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['categories']['Row'] & { quote_categories: Array<{ count: number }> }>
-      return directoryResult(rows.map((row) => ({
-        id: row.id, slug: row.slug, name: row.name, arabicName: row.arabic_name,
-        description: row.description, quoteCount: row.quote_categories[0]?.count ?? 0,
-        updatedAt: row.updated_at,
-      })), count ?? 0, page, pageSize)
-    }
-
-    if (kind === 'sources') {
-      let query = client
-        .from('sources')
-        .select('id,slug,title,arabic_title,author,edition,updated_at,quotes(count)', { count: 'exact' })
-        .eq('is_archived', false)
-        .order('title').order('id')
-      if (search) query = query.ilike('title', pattern)
-      const { data, count } = await readCountedPage(query, offset, pageSize)
-      const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['sources']['Row'] & { quotes: Array<{ count: number }> }>
-      return directoryResult(rows.map((row) => ({
-        id: row.id, slug: row.slug, name: row.title, arabicName: row.arabic_title,
-        secondary: row.author, description: row.edition, quoteCount: row.quotes[0]?.count ?? 0,
-        updatedAt: row.updated_at,
-      })), count ?? 0, page, pageSize)
-    }
-
-    let query = client
-      .from('translators')
-      .select('id,slug,name,bio,updated_at,quotes(count)', { count: 'exact' })
-      .eq('is_archived', false)
-      .order('name').order('id')
-    if (search) query = query.ilike('name', pattern)
-    const { data, count } = await readCountedPage(query, offset, pageSize)
-    const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['translators']['Row'] & { quotes: Array<{ count: number }> }>
     return directoryResult(rows.map((row) => ({
-      id: row.id, slug: row.slug, name: row.name, description: row.bio,
-      quoteCount: row.quotes[0]?.count ?? 0, updatedAt: row.updated_at,
-    })), count ?? 0, page, pageSize)
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      arabicName: row.arabic_name,
+      secondary: row.secondary,
+      description: row.description,
+      quoteCount: row.quote_count,
+      updatedAt: row.updated_at,
+    })), total, page, pageSize)
   })
 }
 

@@ -34,6 +34,7 @@ Apply the SQL files in order:
 2. `supabase/migrations/002_nextauth_migration.sql`
 3. `supabase/migrations/003_final_production.sql`
 4. `supabase/migrations/004_security_audit.sql`
+5. `supabase/migrations/005_public_directory_rpc.sql`
 
 Migration 003 adds normalized Arabic search, trigram indexes, stable database pagination, audit records, transactional quote saves/deletes, and safe tag merging. Migration 004 limits public quote columns, adds shared login throttling, treats search wildcards literally, and makes quote-state and taxonomy changes transactional. `supabase/seed.sql` is intentionally empty.
 

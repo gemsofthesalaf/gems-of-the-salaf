@@ -17,6 +17,7 @@ let tables: Record<string, Row[]>
 let cap: number
 let missingCount: boolean
 let failOffset: number | undefined
+let failDirectoryRpc = false
 let searchRows: Row[]
 
 function record(id: number): Row {
@@ -35,6 +36,7 @@ beforeEach(() => {
   cap = 1000
   missingCount = false
   failOffset = undefined
+  failDirectoryRpc = false
   searchRows = []
   tables = { quotes: [], scholars: [], categories: [], sources: [], translators: [], tags: [] }
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -42,6 +44,16 @@ beforeEach(() => {
     requests.push({ url, init })
     if (url.pathname.includes('/rpc/')) {
       const args = JSON.parse(String(init?.body))
+      if (args.p_kind) {
+        if (failDirectoryRpc) return Response.json({ message: 'directory RPC failed' }, { status: 500 })
+        const sourceRows = tables[args.p_kind] ?? []
+        const rows = sourceRows.slice(args.p_offset, args.p_offset + args.p_limit).map(row => ({
+          id: row.id, slug: row.slug, name: row.name ?? row.english_name ?? row.title,
+          arabic_name: row.arabic_name ?? null, secondary: null, description: null,
+          quote_count: 1234, updated_at: row.updated_at, total_count: sourceRows.length,
+        }))
+        return Response.json(args.p_offset === failOffset ? [] : rows)
+      }
       const rows = args.p_offset === failOffset ? [] : searchRows.slice(args.p_offset, args.p_offset + Math.min(cap, args.p_limit))
       return Response.json(rows)
     }
@@ -99,7 +111,7 @@ describe('public search pagination', () => {
 })
 
 describe('public directory pagination and counts', () => {
-  it.each(['scholars', 'categories', 'sources', 'translators'] as const)('fills %s pages and adds an ID tie-breaker', async kind => {
+  it.each(['scholars', 'categories', 'sources', 'translators'] as const)('loads %s through the restricted directory RPC', async kind => {
     cap = 2
     tables[kind] = Array.from({ length: 11 }, (_, i) => record(i))
     const result = await getDirectory(kind, '50%_\\', 2, 5)
@@ -108,29 +120,29 @@ describe('public directory pagination and counts', () => {
       expect(result.data.items.map(row => row.id)).toEqual(['000005', '000006', '000007', '000008', '000009'])
       expect(result.data.items[0].quoteCount).toBe(1234)
     }
-    for (const { url } of requests) {
-      expect(url.searchParams.get('order')).toMatch(/,id.asc$/)
-      expect(url.searchParams.get('is_archived')).toBe('eq.false')
-      const column = kind === 'scholars' ? 'english_name' : kind === 'sources' ? 'title' : 'name'
-      expect(url.searchParams.get(column)).toBe('ilike.%50\\%\\_\\\\%')
+    for (const { url, init } of requests) {
+      expect(url.pathname).toContain('/rpc/get_public_directory')
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        p_kind: kind, p_search: '50%_\\', p_offset: 5, p_limit: 5,
+      })
     }
   })
 
-  it('recovers directory totals after a PostgREST 416 so the UI can redirect', async () => {
+  it('recovers the total on an out-of-range page so the UI can redirect', async () => {
     tables.scholars = [record(1), record(2)]
     expect(await getDirectory('scholars', '', 5)).toMatchObject({ ok: true, data: { items: [], total: 2, totalPages: 1 } })
+    expect(requests).toHaveLength(2)
+    expect(JSON.parse(String(requests[1].init?.body))).toMatchObject({ p_offset: 0, p_limit: 1 })
   })
 
-  it('does not mistake a missing count for an empty directory', async () => {
-    missingCount = true
+  it('uses the RPC total even when the directory has no quote-count rows', async () => {
     tables.scholars = [record(1)]
-    expect(await getDirectory('scholars', '', 1)).toMatchObject({ ok: false })
+    const result = await getDirectory('scholars', '', 1)
+    expect(result).toMatchObject({ ok: true, data: { total: 1 } })
   })
 
-  it('fails an incomplete directory page instead of silently dropping records', async () => {
-    cap = 2
-    failOffset = 2
-    tables.scholars = Array.from({ length: 7 }, (_, i) => record(i))
+  it('surfaces directory RPC failures instead of disguising them as empty results', async () => {
+    failDirectoryRpc = true
     expect(await getDirectory('scholars', '', 1, 5)).toMatchObject({ ok: false })
   })
 })
