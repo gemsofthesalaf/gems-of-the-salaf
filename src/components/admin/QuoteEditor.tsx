@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, Save } from 'lucide-react'
 import { saveQuoteAction, type ActionResult } from '@/app/actions/quote-actions'
@@ -14,11 +14,17 @@ type FieldErrors = NonNullable<ActionResult['fieldErrors']>
 type NullableTextKey = 'book' | 'volume' | 'page' | 'chapter' | 'edition' | 'external_reference' | 'admin_notes'
 
 export function QuoteEditor({ initial, options }: { initial?: Partial<EditorValue>; options: QuoteEditorOptions }) {
+  return <QuoteEditorForm key={initial?.id ?? 'new'} initial={initial} options={options} />
+}
+
+function QuoteEditorForm({ initial, options }: { initial?: Partial<EditorValue>; options: QuoteEditorOptions }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const inFlight = useRef(false)
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [preview, setPreview] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
   const [value, setValue] = useState<EditorValue>({
     id: initial?.id ?? null,
     slug: initial?.slug ?? '',
@@ -45,6 +51,12 @@ export function QuoteEditor({ initial, options }: { initial?: Partial<EditorValu
     [options.scholars, value.scholar_id],
   )
   const hasActiveScholar = options.scholars.some((item) => !item.isArchived)
+
+  useEffect(() => {
+    if (!pending && message?.kind === 'error') {
+      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+    }
+  }, [message, pending])
 
   function clearFieldError(key: keyof EditorValue) {
     setFieldErrors((current) => {
@@ -74,23 +86,35 @@ export function QuoteEditor({ initial, options }: { initial?: Partial<EditorValu
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (inFlight.current || !hasActiveScholar) return
+    inFlight.current = true
     setMessage(null)
     setFieldErrors({})
     startTransition(async () => {
-      const result = await saveQuoteAction(value)
-      if (!result.ok) {
-        setFieldErrors(result.fieldErrors ?? {})
-        setMessage({ kind: 'error', text: result.message })
-        return
+      try {
+        const result = await saveQuoteAction(value)
+        if (!result.ok) {
+          setFieldErrors(result.fieldErrors ?? {})
+          setMessage({ kind: 'error', text: result.message })
+          return
+        }
+        setMessage({ kind: 'success', text: result.message })
+        if (!value.id && result.id) {
+          setValue((current) => ({ ...current, id: result.id }))
+          router.replace(`/admin/quotes/${result.id}/edit`)
+        }
+        router.refresh()
+      } catch {
+        setMessage({ kind: 'error', text: 'The save could not be confirmed. Your text is still here. Check the quote before retrying; if your session expired, sign in again.' })
+      } finally {
+        inFlight.current = false
       }
-      setMessage({ kind: 'success', text: result.message })
-      if (!value.id && result.id) router.replace(`/admin/quotes/${result.id}/edit`)
-      router.refresh()
     })
   }
 
   return (
-    <form className="editor-layout" onSubmit={submit} noValidate>
+    <form ref={formRef} onSubmit={submit} noValidate aria-busy={pending}>
+      <fieldset className="editor-layout" disabled={pending} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="editor-main">
         {message && (
           <div className={`form-alert form-alert-${message.kind}`} role={message.kind === 'error' ? 'alert' : 'status'}>
@@ -247,15 +271,19 @@ export function QuoteEditor({ initial, options }: { initial?: Partial<EditorValu
             className="field-control"
             value={value.status}
             onChange={(event) => set('status', event.target.value as EditorValue['status'])}
+            aria-invalid={Boolean(errorFor('status'))}
+            aria-describedby={errorFor('status') ? 'status-error' : undefined}
           >
             <option value="draft">Draft</option>
             <option value="published">Published</option>
             <option value="archived">Archived</option>
           </select>
+          <FieldError id="status-error" message={errorFor('status')} />
           <label className="check-row">
-            <input type="checkbox" checked={value.featured} onChange={(event) => set('featured', event.target.checked)} />
+            <input type="checkbox" checked={value.featured} onChange={(event) => set('featured', event.target.checked)} aria-invalid={Boolean(errorFor('featured'))} aria-describedby={errorFor('featured') ? 'featured-error' : undefined} />
             <span>Feature this quote</span>
           </label>
+          <FieldError id="featured-error" message={errorFor('featured')} />
 
           <label className="field-label" htmlFor="slug">Stable URL slug *</label>
           <div className="slug-row">
@@ -282,7 +310,7 @@ export function QuoteEditor({ initial, options }: { initial?: Partial<EditorValu
             <Save aria-hidden="true" />
             {pending ? 'Saving…' : 'Save quote'}
           </button>
-          <button className="button button-secondary" type="button" onClick={() => setPreview((current) => !current)}>
+          <button className="button button-secondary" type="button" aria-expanded={preview} aria-controls="quote-preview" onClick={() => setPreview((current) => !current)}>
             <Eye aria-hidden="true" />
             {preview ? 'Hide preview' : 'Preview'}
           </button>
@@ -292,13 +320,14 @@ export function QuoteEditor({ initial, options }: { initial?: Partial<EditorValu
         </section>
 
         {preview && (
-          <section className="editor-preview" aria-label="Quote preview">
+          <section id="quote-preview" className="editor-preview" aria-label="Quote preview">
             {value.arabic_text && <p className="quote-arabic" lang="ar" dir="rtl">{value.arabic_text}</p>}
             <blockquote>{value.english_text || 'English translation preview'}</blockquote>
             <p>— {scholar?.label || 'Select a scholar'}</p>
           </section>
         )}
       </aside>
+      </fieldset>
     </form>
   )
 }
@@ -398,7 +427,7 @@ function ChoiceGrid({
   error?: string
 }) {
   return (
-    <fieldset className="choice-fieldset" aria-invalid={Boolean(error)}>
+    <fieldset className="choice-fieldset" tabIndex={-1} aria-invalid={Boolean(error)} aria-describedby={error ? `${label.toLowerCase()}-error` : undefined}>
       <legend>{label}</legend>
       <div className="choice-grid">
         {options.length ? options.map((option) => {

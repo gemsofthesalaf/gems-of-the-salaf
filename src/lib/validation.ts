@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const optionalFilter = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined),
-  z.string().max(160).optional(),
+  z.string().max(160).optional().catch(undefined),
 )
 
 export const slugSchema = z
@@ -98,7 +98,7 @@ export const scholarInputSchema = baseTaxonomySchema.extend({
   arabic_name: nullableText(200),
   death_year: nullableText(80),
   biography: nullableText(10_000),
-  image_url: z.union([z.url().refine((value) => /^https?:\/\//i.test(value)), z.null()]),
+  image_url: z.preprocess((value) => value === '' ? null : value, z.union([z.url().refine((value) => /^https?:\/\//i.test(value)), z.null()])),
 })
 
 export const sourceInputSchema = baseTaxonomySchema.extend({
@@ -113,7 +113,7 @@ export const categoryInputSchema = baseTaxonomySchema.extend({
   name: z.string().trim().min(1).max(160),
   arabic_name: nullableText(160),
   description: nullableText(2_000),
-  parent_id: z.union([z.uuid(), z.null()]),
+  parent_id: z.preprocess((value) => value === '' ? null : value, z.union([z.uuid(), z.null()])),
   sort_order: z.coerce.number().int().min(-10_000).max(10_000),
 })
 

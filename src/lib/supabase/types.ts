@@ -128,9 +128,21 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
-      is_admin: {
-        Args: Record<PropertyKey, never>
+      admin_save_taxonomy: {
+        Args: { p_kind: string; p_id: string | null; p_value: Json; p_actor_admin_id: string }
+        Returns: string
+      }
+      admin_delete_taxonomy: {
+        Args: { p_kind: string; p_id: string; p_actor_admin_id: string }
+        Returns: undefined
+      }
+      consume_login_attempt: {
+        Args: { p_key: string }
         Returns: boolean
+      }
+      admin_set_quote_state: {
+        Args: { p_quote_id: string; p_status: QuoteStatus | null; p_featured: boolean | null; p_actor_admin_id: string }
+        Returns: undefined
       }
       normalize_arabic_search: {
         Args: { input_text: string | null }

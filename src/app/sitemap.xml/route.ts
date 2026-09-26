@@ -1,12 +1,13 @@
-import { getPublishedQuoteCount } from '@/data/public'
+import { getSitemapRecordCounts } from '@/data/public'
 import { getSiteUrl } from '@/lib/site'
-import { renderSitemapIndex, sitemapChunkCount } from '@/lib/sitemap'
+import { renderSitemapIndex, sitemapChunkCount, sitemapRecordTotal, sitemapUnavailable } from '@/lib/sitemap'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const result = await getPublishedQuoteCount()
-  const count = sitemapChunkCount(result.ok ? result.data : 0)
+  const result = await getSitemapRecordCounts()
+  if (!result.ok) return sitemapUnavailable()
+  const count = sitemapChunkCount(sitemapRecordTotal(result.data))
   const baseUrl = getSiteUrl()
   const urls = Array.from({ length: count }, (_, id) => `${baseUrl}/sitemaps/${id}`)
   return new Response(renderSitemapIndex(urls), { headers: xmlHeaders() })

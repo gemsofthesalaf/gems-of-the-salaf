@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createPublicClient } from '@/lib/supabase/server'
 import type { Database, QuoteStatus } from '@/lib/supabase/types'
 import type { QuoteSearchParams } from '@/lib/validation'
+import { SITEMAP_SEGMENTS, type SitemapRecordCounts, type SitemapSegment } from '@/lib/sitemap'
 
 export type DataResult<T> =
   | { ok: true; data: T }
@@ -18,10 +19,9 @@ const unavailable = <T>(): DataResult<T> => ({
 async function withPublicClient<T>(
   operation: (client: SupabaseClient<Database>) => Promise<T>,
 ): Promise<DataResult<T>> {
-  const client = createPublicClient()
-  if (!client) return unavailable()
-
   try {
+    const client = createPublicClient()
+    if (!client) return unavailable()
     return { ok: true, data: await operation(client) }
   } catch {
     return unavailable()
@@ -30,6 +30,18 @@ async function withPublicClient<T>(
 
 function assertNoError(error: { message: string } | null): void {
   if (error) throw new Error('Database query failed')
+}
+
+function requireCount(count: number | null): number {
+  if (count === null || !Number.isSafeInteger(count) || count < 0) throw new Error('Missing or invalid count')
+  return count
+}
+
+function pageOffset(page: number, pageSize: number): number {
+  const offset = (page - 1) * pageSize
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1
+    || !Number.isSafeInteger(offset) || offset > 2_147_483_647) throw new Error('Invalid page')
+  return offset
 }
 
 function escapeLike(value: string): string {
@@ -88,8 +100,8 @@ async function runQuoteSearch(
   params: QuoteSearchParams,
   pageSize: number,
 ): Promise<QuoteSearchResult> {
-  const offset = (params.page - 1) * pageSize
-  const { data, error } = await client.rpc('search_published_quotes', {
+  const offset = pageOffset(params.page, pageSize)
+  const args = {
     p_search: params.q || null,
     p_scholar_slug: params.scholar ?? null,
     p_category_slug: params.category ?? null,
@@ -97,29 +109,33 @@ async function runQuoteSearch(
     p_translator_slug: params.translator ?? null,
     p_tag_slug: params.tag ?? null,
     p_sort: params.sort,
-    p_offset: offset,
-    p_limit: pageSize,
-  })
-  assertNoError(error)
-
-  let rows = data ?? []
-  let total = Number(rows[0]?.total_count ?? 0)
-
-  if (rows.length === 0 && params.page > 1) {
-    const { data: firstPage, error: firstPageError } = await client.rpc('search_published_quotes', {
-      p_search: params.q || null,
-      p_scholar_slug: params.scholar ?? null,
-      p_category_slug: params.category ?? null,
-      p_source_slug: params.source ?? null,
-      p_translator_slug: params.translator ?? null,
-      p_tag_slug: params.tag ?? null,
-      p_sort: params.sort,
-      p_offset: 0,
-      p_limit: 1,
+  }
+  const rows: SearchQuoteRow[] = []
+  let total: number | undefined
+  do {
+    const { data, error } = await client.rpc('search_published_quotes', {
+      ...args, p_offset: offset + rows.length, p_limit: pageSize - rows.length,
     })
-    assertNoError(firstPageError)
-    total = Number(firstPage?.[0]?.total_count ?? 0)
-    rows = []
+    assertNoError(error)
+    if (!data?.length) {
+      if (rows.length) throw new Error('Incomplete search page')
+      // The RPC returns its window count on each row, so empty pages need a probe.
+      if (offset > 0) {
+        const first = await client.rpc('search_published_quotes', { ...args, p_offset: 0, p_limit: 1 })
+        assertNoError(first.error)
+        total = first.data?.length ? requireCount(Number(first.data[0].total_count)) : 0
+        if (offset < total) throw new Error('Incomplete search page')
+      } else total = 0
+      break
+    }
+    const batchTotal = requireCount(Number(data[0].total_count))
+    if (total !== undefined && batchTotal !== total) throw new Error('Search changed while paging')
+    total = batchTotal
+    rows.push(...data)
+  } while (rows.length < Math.min(pageSize, Math.max(0, total - offset)))
+
+  if (rows.length > Math.min(pageSize, Math.max(0, total - offset))) {
+    throw new Error('Inconsistent search count')
   }
 
   return {
@@ -132,10 +148,53 @@ async function runQuoteSearch(
 }
 
 export function searchQuotes(params: QuoteSearchParams, pageSize = 18): Promise<DataResult<QuoteSearchResult>> {
-  return withPublicClient((client) => runQuoteSearch(client, params, Math.min(Math.max(pageSize, 1), 48)))
+  const size = Number.isFinite(pageSize) ? Math.min(Math.max(Math.floor(pageSize), 1), 48) : 18
+  return withPublicClient((client) => runQuoteSearch(client, params, size))
 }
 
 export type FilterOption = { id: string; slug: string; label: string }
+
+// PostgREST applies its own row cap even when a larger range is requested.
+const PUBLIC_BATCH_SIZE = 1_000
+
+type CountedQuery<T> = {
+  range: (from: number, to: number) => PromiseLike<{
+    data: T[] | null; error: { message: string; code?: string } | null; count: number | null
+  }>
+}
+
+async function readCountedPage<T>(query: CountedQuery<T>, offset: number, limit: number): Promise<{ data: T[]; count: number }> {
+  const items: T[] = []
+  let total: number | undefined
+  do {
+    const from = offset + items.length
+    const { data, error, count } = await query.range(from, from + Math.min(PUBLIC_BATCH_SIZE, limit - items.length) - 1)
+    // PostgREST reports an out-of-range offset as 416 and the client discards its count.
+    if (error?.code === 'PGRST103' && offset > 0 && items.length === 0) {
+      const first = await query.range(0, 0)
+      assertNoError(first.error)
+      total = requireCount(first.count)
+      if (offset < total) throw new Error('Unexpected range failure')
+      return { data: [], count: total }
+    }
+    assertNoError(error)
+    const batchTotal = requireCount(count)
+    if (total !== undefined && total !== batchTotal) throw new Error('Records changed while paging')
+    total = batchTotal
+    if (!data?.length) {
+      if (from < total) throw new Error('Incomplete page')
+      break
+    }
+    items.push(...data)
+  } while (items.length < Math.min(limit, Math.max(0, total - offset)))
+  if (items.length > Math.min(limit, Math.max(0, total - offset))) throw new Error('Inconsistent page count')
+  return { data: items, count: total }
+}
+
+async function readAllOptions<T>(query: CountedQuery<T>): Promise<T[]> {
+  return (await readCountedPage(query, 0, Infinity)).data
+}
+
 export type QuoteFilterOptions = {
   scholars: FilterOption[]
   categories: FilterOption[]
@@ -147,25 +206,26 @@ export type QuoteFilterOptions = {
 export const getQuoteFilterOptions = cache(async (): Promise<DataResult<QuoteFilterOptions>> =>
   withPublicClient(async (client) => {
     const [scholars, categories, sources, translators, tags] = await Promise.all([
-      client.from('scholars').select('id,slug,english_name').eq('is_archived', false).order('english_name'),
-      client.from('categories').select('id,slug,name').eq('is_archived', false).order('sort_order').order('name'),
-      client.from('sources').select('id,slug,title').eq('is_archived', false).order('title'),
-      client.from('translators').select('id,slug,name').eq('is_archived', false).order('name'),
-      client.from('tags').select('id,slug,name').eq('is_archived', false).order('name'),
+      readAllOptions(client.from('scholars').select('id,slug,english_name', { count: 'exact' }).eq('is_archived', false).order('english_name').order('id')),
+      readAllOptions(client.from('categories').select('id,slug,name', { count: 'exact' }).eq('is_archived', false).order('sort_order').order('name').order('id')),
+      readAllOptions(client.from('sources').select('id,slug,title', { count: 'exact' }).eq('is_archived', false).order('title').order('id')),
+      readAllOptions(client.from('translators').select('id,slug,name', { count: 'exact' }).eq('is_archived', false).order('name').order('id')),
+      readAllOptions(client.from('tags').select('id,slug,name', { count: 'exact' }).eq('is_archived', false).order('name').order('id')),
     ])
-    for (const result of [scholars, categories, sources, translators, tags]) assertNoError(result.error)
 
     return {
-      scholars: (scholars.data ?? []).map((item) => ({ id: item.id, slug: item.slug, label: item.english_name })),
-      categories: (categories.data ?? []).map((item) => ({ id: item.id, slug: item.slug, label: item.name })),
-      sources: (sources.data ?? []).map((item) => ({ id: item.id, slug: item.slug, label: item.title })),
-      translators: (translators.data ?? []).map((item) => ({ id: item.id, slug: item.slug, label: item.name })),
-      tags: (tags.data ?? []).map((item) => ({ id: item.id, slug: item.slug, label: item.name })),
+      scholars: scholars.map((item) => ({ id: item.id, slug: item.slug, label: item.english_name })),
+      categories: categories.map((item) => ({ id: item.id, slug: item.slug, label: item.name })),
+      sources: sources.map((item) => ({ id: item.id, slug: item.slug, label: item.title })),
+      translators: translators.map((item) => ({ id: item.id, slug: item.slug, label: item.name })),
+      tags: tags.map((item) => ({ id: item.id, slug: item.slug, label: item.name })),
     }
   }),
 )
 
-type QuoteDetailRow = Database['public']['Tables']['quotes']['Row'] & {
+type QuoteDetailRow = Pick<Database['public']['Tables']['quotes']['Row'],
+  'id' | 'slug' | 'arabic_text' | 'english_text' | 'status' | 'featured' | 'book' | 'volume' | 'page' | 'chapter'
+  | 'edition' | 'external_reference' | 'published_at' | 'updated_at'> & {
   scholars: {
     id: string
     english_name: string
@@ -238,7 +298,8 @@ export const getQuoteBySlug = cache(async (slug: string): Promise<DataResult<Quo
     const { data, error } = await client
       .from('quotes')
       .select(`
-        *,
+        id,slug,arabic_text,english_text,status,featured,book,volume,page,chapter,
+        edition,external_reference,published_at,updated_at,
         scholars!inner(id,english_name,arabic_name,slug,death_year),
         sources(id,title,arabic_title,author,slug,edition),
         translators(id,name,slug),
@@ -306,7 +367,7 @@ export async function getDirectory(
   pageSize = 18,
 ): Promise<DataResult<DirectoryResult>> {
   return withPublicClient(async (client) => {
-    const offset = (page - 1) * pageSize
+    const offset = pageOffset(page, pageSize)
     const pattern = `%${escapeLike(search.trim().slice(0, 160))}%`
 
     if (kind === 'scholars') {
@@ -314,11 +375,9 @@ export async function getDirectory(
         .from('scholars')
         .select('id,slug,english_name,arabic_name,death_year,biography,updated_at,quotes(count)', { count: 'exact' })
         .eq('is_archived', false)
-        .order('english_name')
-        .range(offset, offset + pageSize - 1)
+        .order('english_name').order('id')
       if (search) query = query.ilike('english_name', pattern)
-      const { data, error, count } = await query
-      assertNoError(error)
+      const { data, count } = await readCountedPage(query, offset, pageSize)
       const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['scholars']['Row'] & { quotes: Array<{ count: number }> }>
       return directoryResult(rows.map((row) => ({
         id: row.id, slug: row.slug, name: row.english_name, arabicName: row.arabic_name,
@@ -332,11 +391,9 @@ export async function getDirectory(
         .from('categories')
         .select('id,slug,name,arabic_name,description,updated_at,quote_categories(count)', { count: 'exact' })
         .eq('is_archived', false)
-        .order('sort_order').order('name')
-        .range(offset, offset + pageSize - 1)
+        .order('sort_order').order('name').order('id')
       if (search) query = query.ilike('name', pattern)
-      const { data, error, count } = await query
-      assertNoError(error)
+      const { data, count } = await readCountedPage(query, offset, pageSize)
       const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['categories']['Row'] & { quote_categories: Array<{ count: number }> }>
       return directoryResult(rows.map((row) => ({
         id: row.id, slug: row.slug, name: row.name, arabicName: row.arabic_name,
@@ -350,11 +407,9 @@ export async function getDirectory(
         .from('sources')
         .select('id,slug,title,arabic_title,author,edition,updated_at,quotes(count)', { count: 'exact' })
         .eq('is_archived', false)
-        .order('title')
-        .range(offset, offset + pageSize - 1)
+        .order('title').order('id')
       if (search) query = query.ilike('title', pattern)
-      const { data, error, count } = await query
-      assertNoError(error)
+      const { data, count } = await readCountedPage(query, offset, pageSize)
       const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['sources']['Row'] & { quotes: Array<{ count: number }> }>
       return directoryResult(rows.map((row) => ({
         id: row.id, slug: row.slug, name: row.title, arabicName: row.arabic_title,
@@ -367,11 +422,9 @@ export async function getDirectory(
       .from('translators')
       .select('id,slug,name,bio,updated_at,quotes(count)', { count: 'exact' })
       .eq('is_archived', false)
-      .order('name')
-      .range(offset, offset + pageSize - 1)
+      .order('name').order('id')
     if (search) query = query.ilike('name', pattern)
-    const { data, error, count } = await query
-    assertNoError(error)
+    const { data, count } = await readCountedPage(query, offset, pageSize)
     const rows = (data ?? []) as unknown as Array<Database['public']['Tables']['translators']['Row'] & { quotes: Array<{ count: number }> }>
     return directoryResult(rows.map((row) => ({
       id: row.id, slug: row.slug, name: row.name, description: row.bio,
@@ -458,7 +511,7 @@ type FeaturedQuoteRow = Pick<Database['public']['Tables']['quotes']['Row'], 'id'
 
 function getFeaturedQuote(): Promise<DataResult<QuoteListItem | null>> {
   return withPublicClient(async (client) => {
-    const { data, error } = await client.from('quotes').select('id,slug,arabic_text,english_text,book,featured,published_at,scholars!inner(id,english_name,slug,death_year),sources(id,title,slug),translators(id,name,slug)').eq('status', 'published').eq('featured', true).order('published_at', { ascending: false }).limit(1).maybeSingle()
+    const { data, error } = await client.from('quotes').select('id,slug,arabic_text,english_text,book,featured,published_at,scholars!inner(id,english_name,slug,death_year),sources(id,title,slug),translators(id,name,slug)').eq('status', 'published').eq('featured', true).order('published_at', { ascending: false, nullsFirst: false }).order('id').limit(1).maybeSingle()
     assertNoError(error)
     if (!data) return null
     const row = data as unknown as FeaturedQuoteRow
@@ -474,32 +527,53 @@ function getFeaturedQuote(): Promise<DataResult<QuoteListItem | null>> {
 
 export function getPublishedQuoteCount(): Promise<DataResult<number>> {
   return withPublicClient(async (client) => {
-    const { count, error } = await client.from('quotes').select('*', { count: 'exact', head: true }).eq('status', 'published')
+    const { count, error } = await client.from('quotes').select('id', { count: 'exact', head: true }).eq('status', 'published')
     assertNoError(error)
-    return count ?? 0
+    return requireCount(count)
   })
 }
 
-export async function getSitemapRecordsPage(offset: number, limit: number, includeDirectories: boolean): Promise<DataResult<{
-  quotes: Array<{ slug: string; updated_at: string }>
-  scholars: Array<{ slug: string; updated_at: string }>
-  categories: Array<{ slug: string; updated_at: string }>
-  sources: Array<{ slug: string; updated_at: string }>
-  translators: Array<{ slug: string; updated_at: string }>
-}>> {
+export function getSitemapRecordCounts(): Promise<DataResult<SitemapRecordCounts>> {
   return withPublicClient(async (client) => {
-    const empty = Promise.resolve({ data: [], error: null })
-    const [quotes, scholars, categories, sources, translators] = await Promise.all([
-      client.from('quotes').select('slug,updated_at').eq('status', 'published').order('id').range(offset, offset + limit - 1),
-      includeDirectories ? client.from('scholars').select('slug,updated_at').eq('is_archived', false) : empty,
-      includeDirectories ? client.from('categories').select('slug,updated_at').eq('is_archived', false) : empty,
-      includeDirectories ? client.from('sources').select('slug,updated_at').eq('is_archived', false) : empty,
-      includeDirectories ? client.from('translators').select('slug,updated_at').eq('is_archived', false) : empty,
-    ])
-    for (const result of [quotes, scholars, categories, sources, translators]) assertNoError(result.error)
-    return {
-      quotes: quotes.data ?? [], scholars: scholars.data ?? [], categories: categories.data ?? [],
-      sources: sources.data ?? [], translators: translators.data ?? [],
+    const counts = {} as SitemapRecordCounts
+    await Promise.all(SITEMAP_SEGMENTS.map(async (segment) => {
+      const { count, error } = await (segment === 'quotes'
+        ? client.from('quotes').select('id', { count: 'exact', head: true }).eq('status', 'published')
+        : client.from(segment).select('id', { count: 'exact', head: true }).eq('is_archived', false))
+      assertNoError(error)
+      counts[segment] = requireCount(count)
+    }))
+    return counts
+  })
+}
+
+type SitemapRecords = Record<SitemapSegment, Array<{ slug: string; updated_at: string }>>
+
+export function getSitemapRecordsPage(
+  offset: number,
+  limit: number,
+  counts: SitemapRecordCounts,
+): Promise<DataResult<SitemapRecords>> {
+  return withPublicClient(async (client) => {
+    const records: SitemapRecords = { quotes: [], scholars: [], categories: [], sources: [], translators: [] }
+    let segmentStart = 0
+    // Directories share the bounded sequence instead of overflowing chunk zero.
+    for (const segment of SITEMAP_SEGMENTS) {
+      const from = Math.max(0, offset - segmentStart)
+      const to = Math.min(counts[segment], offset + limit - segmentStart)
+      segmentStart += counts[segment]
+      let cursor = from
+      while (cursor < to) {
+        const visible = segment === 'quotes'
+          ? client.from('quotes').select('slug,updated_at').eq('status', 'published')
+          : client.from(segment).select('slug,updated_at').eq('is_archived', false)
+        const { data, error } = await visible.order('id').range(cursor, Math.min(cursor + PUBLIC_BATCH_SIZE, to) - 1)
+        assertNoError(error)
+        if (!data?.length) throw new Error('Incomplete sitemap page')
+        records[segment].push(...data)
+        cursor += data.length
+      }
     }
+    return records
   })
 }

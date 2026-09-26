@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/authz'
 import { createAdminClient } from '@/lib/supabase/admin'
-import type { Database, QuoteStatus } from '@/lib/supabase/types'
 import { quoteEditorSchema, uuidSchema } from '@/lib/validation'
 
 export type ActionResult = {
@@ -101,50 +100,20 @@ const stateSchema = z.object({
   featured: z.boolean().optional(),
 })
 
-type ExistingQuote = Database['public']['Tables']['quotes']['Row'] & {
-  quote_categories: Array<{ category_id: string }>
-  quote_tags: Array<{ tag_id: string }>
-}
-
 export async function setQuoteStateAction(input: unknown): Promise<ActionResult> {
   const admin = await requireAdmin()
   const parsed = stateSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: 'Invalid quote action.' }
   const client = createAdminClient()
-  const { data, error } = await client
-    .from('quotes')
-    .select('*,quote_categories(category_id),quote_tags(tag_id)')
-    .eq('id', parsed.data.id)
-    .maybeSingle()
-  if (error || !data) return { ok: false, message: 'The quote no longer exists.' }
-  const quote = data as unknown as ExistingQuote
-  const status: QuoteStatus = parsed.data.status ?? quote.status
-  const featured = parsed.data.featured ?? quote.featured
-
-  const { error: saveError } = await client.rpc('admin_save_quote', {
-    p_id: quote.id,
-    p_slug: quote.slug,
-    p_arabic_text: quote.arabic_text,
-    p_english_text: quote.english_text,
-    p_scholar_id: quote.scholar_id,
-    p_source_id: quote.source_id,
-    p_translator_id: quote.translator_id,
-    p_status: status,
-    p_featured: featured,
-    p_book: quote.book,
-    p_volume: quote.volume,
-    p_page: quote.page,
-    p_chapter: quote.chapter,
-    p_edition: quote.edition,
-    p_external_reference: quote.external_reference,
-    p_admin_notes: quote.admin_notes,
-    p_category_ids: quote.quote_categories.map((item) => item.category_id),
-    p_tag_ids: quote.quote_tags.map((item) => item.tag_id),
+  const { error: saveError } = await client.rpc('admin_set_quote_state', {
+    p_quote_id: parsed.data.id,
+    p_status: parsed.data.status ?? null,
+    p_featured: parsed.data.featured ?? null,
     p_actor_admin_id: admin.id,
   })
   if (saveError) return { ok: false, message: 'The quote state could not be changed.' }
-  revalidateQuotePaths(quote.slug)
-  return { ok: true, message: parsed.data.featured !== undefined ? (featured ? 'Quote featured.' : 'Quote removed from featured items.') : `Quote moved to ${status}.` }
+  revalidateQuotePaths()
+  return { ok: true, message: parsed.data.featured !== undefined ? (parsed.data.featured ? 'Quote featured.' : 'Quote removed from featured items.') : `Quote moved to ${parsed.data.status}.` }
 }
 
 export async function deleteQuoteAction(id: string): Promise<ActionResult> {
@@ -159,6 +128,7 @@ export async function deleteQuoteAction(id: string): Promise<ActionResult> {
 }
 
 function revalidateQuotePaths(slug?: string) {
+  revalidatePath('/', 'layout')
   for (const path of ['/', '/quotes', '/scholars', '/categories', '/sources', '/translators', '/admin', '/admin/quotes', '/sitemap.xml', '/sitemaps']) revalidatePath(path)
   if (slug) revalidatePath(`/quotes/${slug}`)
 }

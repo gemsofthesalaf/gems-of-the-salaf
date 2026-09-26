@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createHash } from 'node:crypto'
 
 export class AuthorizationError extends Error {
   constructor() {
@@ -21,12 +22,13 @@ export async function requireAdmin(): Promise<AdminIdentity> {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('admins')
-    .select('id,email,role')
+    .select('id,email,role,password_hash')
     .eq('id', session.user.id)
     .eq('role', 'admin')
     .maybeSingle()
 
-  if (error || !data) throw new AuthorizationError()
+  if (error || !data?.password_hash || !session.user.credentialVersion ||
+      createHash('sha256').update(data.password_hash).digest('hex') !== session.user.credentialVersion) throw new AuthorizationError()
   return { id: data.id, email: data.email }
 }
 

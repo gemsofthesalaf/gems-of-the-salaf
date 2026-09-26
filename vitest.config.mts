@@ -15,7 +15,9 @@ export default defineConfig({
     fileParallelism: false,
     maxWorkers: 1,
     setupFiles: ['./tests/setup.ts'],
+    exclude: ['**/node_modules/**', '**/e2e/**', '**/.next/**'],
     alias: {
+      'server-only': resolve(projectRoot, 'tests/server-only.ts'),
       '@': resolve(projectRoot, 'src')
     }
   }

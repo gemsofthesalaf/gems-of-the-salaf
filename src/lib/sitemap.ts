@@ -2,8 +2,23 @@ import type { MetadataRoute } from 'next'
 
 export const SITEMAP_PAGE_SIZE = 35_000
 
-export function sitemapChunkCount(publishedQuotes: number): number {
-  return Math.max(1, Math.ceil(Math.max(0, publishedQuotes) / SITEMAP_PAGE_SIZE))
+export const SITEMAP_SEGMENTS = ['quotes', 'scholars', 'categories', 'sources', 'translators'] as const
+export type SitemapSegment = typeof SITEMAP_SEGMENTS[number]
+export type SitemapRecordCounts = Record<SitemapSegment, number>
+
+export function sitemapRecordTotal(counts: SitemapRecordCounts): number {
+  return SITEMAP_SEGMENTS.reduce((total, segment) => total + counts[segment], 0)
+}
+
+export function sitemapUnavailable(): Response {
+  return new Response('Sitemap temporarily unavailable', {
+    status: 503,
+    headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' },
+  })
+}
+
+export function sitemapChunkCount(totalRecords: number): number {
+  return Math.max(1, Math.ceil(Math.max(0, totalRecords) / SITEMAP_PAGE_SIZE))
 }
 
 export function staticSitemapEntries(baseUrl: string): MetadataRoute.Sitemap {

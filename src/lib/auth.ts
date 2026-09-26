@@ -3,6 +3,9 @@ import 'server-only'
 import type { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcrypt'
+import { createHash } from 'node:crypto'
+import { z } from 'zod'
+import { sessionCookie } from '@/lib/auth-cookie'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 const DUMMY_PASSWORD_HASH = '$2b$12$84cShtbxGbEC81wG5TRl0eNGROGgO.lM927PfK0fbpjJmDgQrLf5q'
@@ -19,20 +22,24 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         const email = credentials?.email?.trim().toLowerCase()
         const password = credentials?.password
-        if (!email || !password || email.length > 320 || password.length > 1_000) return null
+        if (!email || !z.email().safeParse(email).success || !password || Buffer.byteLength(password, 'utf8') > 72) return null
 
         const supabase = createAdminClient()
+        const { data: allowed, error: budgetError } = await supabase.rpc('consume_login_attempt', {
+          p_key: createHash('sha256').update(email).digest('hex'),
+        })
+        if (budgetError || !allowed) return null
         const { data: admin } = await supabase
           .from('admins')
           .select('id,email,role,password_hash')
-          .ilike('email', email)
+          .eq('email', email)
           .maybeSingle()
 
         const hash = admin?.password_hash ?? DUMMY_PASSWORD_HASH
         const validPassword = await bcrypt.compare(password, hash)
         if (!admin || admin.role !== 'admin' || !admin.password_hash || !validPassword) return null
 
-        return { id: admin.id, email: admin.email, role: 'admin' }
+        return { id: admin.id, email: admin.email, role: 'admin', credentialVersion: createHash('sha256').update(admin.password_hash).digest('hex') }
       },
     }),
   ],
@@ -48,12 +55,16 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id
         token.role = user.role
+        token.credentialVersion = user.credentialVersion
+        token.loginAt = Math.floor(Date.now() / 1000)
       }
+      if (!token.loginAt || Date.now() / 1000 - token.loginAt >= 8 * 60 * 60) return { ...token, role: null }
       return token
     },
     async session({ session, token }) {
       session.user.id = token.id ?? ''
       session.user.role = token.role === 'admin' ? 'admin' : null
+      session.user.credentialVersion = token.credentialVersion
       return session
     },
     async redirect({ url, baseUrl }) {
@@ -72,14 +83,6 @@ export const authOptions: NextAuthOptions = {
     error: '/admin/login',
   },
   cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production' ? '__Secure-gems.session-token' : 'gems.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
+    sessionToken: sessionCookie(),
   },
 }

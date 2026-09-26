@@ -1,13 +1,14 @@
 import { getToken } from "next-auth/jwt"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { sessionCookie } from '@/lib/auth-cookie'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Protect admin routes
-  if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+  if ((pathname === '/admin' || pathname.startsWith('/admin/')) && pathname !== '/admin/login') {
+    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET, cookieName: sessionCookie().name })
     
     if (!token || token.role !== 'admin') {
       const url = request.nextUrl.clone()
@@ -16,15 +17,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Redirect authenticated users away from the login page
-  if (pathname === '/admin/login') {
-    const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
-    if (token && token.role === 'admin') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/admin'
-      return NextResponse.redirect(url)
-    }
-  }
+  // Keep login reachable when a signed session's database account is revoked.
 
   return NextResponse.next()
 }

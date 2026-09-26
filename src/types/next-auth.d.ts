@@ -6,6 +6,7 @@ declare module 'next-auth' {
     user: {
       id: string
       role: 'admin' | null
+      credentialVersion?: string
       name?: string | null
       email?: string | null
       image?: string | null
@@ -14,12 +15,15 @@ declare module 'next-auth' {
 
   interface User {
     role: 'admin'
+    credentialVersion?: string
   }
 }
 
 declare module 'next-auth/jwt' {
   interface JWT {
     id?: string
-    role?: 'admin'
+    role?: 'admin' | null
+    credentialVersion?: string
+    loginAt?: number
   }
 }
