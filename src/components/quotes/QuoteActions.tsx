@@ -6,8 +6,12 @@ import { Button } from '@/components/ui/button'
 
 async function writeClipboard(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value)
-    return
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // Some browsers expose the Clipboard API but deny writes in this context.
+    }
   }
   const textarea = document.createElement('textarea')
   textarea.value = value
@@ -15,10 +19,12 @@ async function writeClipboard(value: string): Promise<void> {
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
   document.body.appendChild(textarea)
-  textarea.select()
-  const copied = document.execCommand('copy')
-  textarea.remove()
-  if (!copied) throw new Error('Copy failed')
+  try {
+    textarea.select()
+    if (!document.execCommand('copy')) throw new Error('Copy failed')
+  } finally {
+    textarea.remove()
+  }
 }
 
 type CopyKind = 'arabic' | 'english' | 'both' | 'link' | null
@@ -47,16 +53,27 @@ export function QuoteActions({
   }
 
   async function share() {
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Gems of the Salaf', text: englishText, url: canonicalUrl })
+    const nativeShare = (navigator as unknown as { share?: (data: ShareData) => Promise<void> }).share
+    if (nativeShare) {
+      try {
+        await nativeShare.call(navigator, { title: 'Gems of the Salaf', text: englishText, url: canonicalUrl })
         setMessage('Share sheet opened')
-      } else {
-        await copy('link', canonicalUrl)
+        return
+      } catch (error) {
+        if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') {
+          setMessage('Sharing cancelled')
+          return
+        }
       }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      setMessage('Sharing is unavailable on this device.')
+    }
+
+    try {
+      await writeClipboard(canonicalUrl)
+      setCopied('link')
+      setMessage(nativeShare ? 'Sharing failed; link copied instead' : 'Link copied')
+      window.setTimeout(() => setCopied(null), 1800)
+    } catch {
+      setMessage('Sharing is unavailable and the link could not be copied. Copy the page address manually.')
     }
   }
 
@@ -85,7 +102,7 @@ export function QuoteActions({
       <Button type="button" onClick={share}>
         <Share2 aria-hidden="true" /> Share
       </Button>
-      <p className="sr-only" aria-live="polite">{message}</p>
+      <p className="quote-action-status" role="status" aria-live="polite">{message}</p>
     </div>
   )
 }

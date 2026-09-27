@@ -49,7 +49,7 @@ svg { flex:none; }
 .desktop-nav a,.desktop-telegram { padding:.65rem .1rem; }
 .desktop-nav a:hover,.desktop-telegram:hover { color:var(--primary-dark); }
 .header-actions { display:flex; align-items:center; gap:.45rem; }
-.desktop-search,.mobile-menu-trigger,.quote-card-actions button,.quote-actions button,.icon-button { width:44px; height:44px; border:1px solid var(--border); background:var(--card); display:grid; place-items:center; border-radius:50%; cursor:pointer; color:var(--foreground); }
+.desktop-search,.mobile-menu-trigger,.quote-card-actions button,.icon-button { width:44px; height:44px; border:1px solid var(--border); background:var(--card); display:grid; place-items:center; border-radius:50%; cursor:pointer; color:var(--foreground); }
 .desktop-search svg,.mobile-menu-trigger svg,.quote-card-actions svg,.quote-actions svg { width:1.1rem; }
 .mobile-menu-trigger { display:none; }
 .mobile-nav-overlay { position:fixed; inset:0; z-index:110; background:rgba(16,14,12,.46); animation:fade-in .18s ease-out; }
@@ -129,7 +129,8 @@ svg { flex:none; }
 .quote-card .quote-arabic { font-family:var(--font-arabic); font-size:clamp(1.35rem,2.5vw,1.75rem); line-height:2; }
 .quote-card blockquote { margin:0; font-family:var(--font-serif); font-size:1.08rem; line-height:1.65; }
 .quote-card-footer { margin-top:auto; padding-top:.2rem; }
-.quote-card-actions,.quote-actions { display:flex; gap:.35rem; }
+.quote-card-actions,.quote-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+.quote-action-status { flex-basis:100%; margin:0; color:var(--muted-foreground); font-size:.85rem; }
 .quote-card-actions button { width:38px; height:38px; }
 .read-quote-link { font-weight:750; color:var(--primary-dark); }
 .quote-detail { border-block:1px solid var(--border); padding:clamp(1.5rem,4vw,3.5rem) 0; }
